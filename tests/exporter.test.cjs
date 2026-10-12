@@ -108,13 +108,14 @@ test('UI selects roles and individual messages and persists popup-only mode', as
     ChatExport.mountUI(document.getElementById('app'), async command => { commands.push(command); return state; });
   });
   await page.getByRole('button', { name: 'Human', exact: true }).click();
-  assert.match(await page.locator('.selection').textContent(), /2 of 3/);
+  assert.match(await page.locator('.selection').textContent(), /2 \/ 3/);
   await page.getByLabel('Select user message 1').uncheck();
-  await page.getByText('Export settings', { exact: true }).click();
+  await page.getByRole('button', { name: 'Export settings', exact: true }).click();
   const panelBounds = await page.locator('.ce').boundingBox();
   const exportBounds = await page.getByRole('button', { name: 'Export selected', exact: true }).boundingBox();
   assert.ok(exportBounds.y + exportBounds.height <= panelBounds.y + panelBounds.height, 'Export action stays inside the panel while settings are open');
   await page.getByText('Show the export button on chatbot pages', { exact: true }).click();
+  await page.getByRole('button', { name: '← Messages', exact: true }).click();
   await page.getByRole('button', { name: 'Export selected', exact: true }).click();
   const commands = await page.evaluate(() => commands);
   assert.deepEqual(commands.find(c => c.type === 'ce:export').ids, ['u2']);

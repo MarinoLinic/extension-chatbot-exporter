@@ -17,18 +17,22 @@ The extension targets Chromium browsers. Firefox is not validated.
 
 ## Export a conversation
 
-1. Open a conversation and wait for the response to finish generating.
-2. Click **↓ Export chat** on the page or the extension's toolbar icon.
-3. Review **Export settings**, then click **Collect conversation**.
-4. Keep the chat tab selected during the scan. Read any capture warnings afterward.
-5. Choose messages using **All**, **Human**, **Assistant**, **None**, **Invert** or individual checkboxes.
-6. Choose a format and click **Export selected**.
+1. Open a conversation and wait for the response to finish.
+2. Click **↓ Export chat** on the page or the toolbar icon. Messages already rendered on the page are immediately available for selection.
+3. Choose messages with **All**, **Human**, **Assistant**, **None**, **Invert** or individual checkboxes.
+4. Choose a format and click **Export selected**.
 
-Bulk selection applies to the entire capture, including other selection pages. The list displays 80 messages at a time. Closing the popup does not stop a scan. **Cancel** stops scanning and keeps the collected messages available as a partial export.
+Exporting all messages or all messages of one role verifies history automatically. If the page already contains the whole transcript, the exporter checks its boundaries rather than scanning through every screen. Unchanged verified history is reused for later exports. An individually selected subset exports directly from the loaded messages.
 
-Turn off **Show the export button on chatbot pages** for toolbar-only controls. Both interfaces control the same capture in the source tab. Navigation to another conversation discards the capture; reloading the tab also loses it. Save before leaving or reloading.
+**Load all** lets you load and inspect the full history before exporting. **Refresh messages** rereads the current page without scrolling. These are optional; there is no required collection step. **Cancel** stops history loading without starting a download.
 
-The browser asks where to save by default. A “queued” download has been accepted by the browser; check Downloads for completion.
+The message list uses most of the popup's height. Previews are limited to two lines; hover for the longer preview. Provider badges and assistant labels use colors to distinguish chatbots. Export controls stay visible while the list scrolls. The gear button opens a separate settings view, and **← Messages** returns to the selection.
+
+Selection is preserved when the page updates. Bulk role selection includes newly discovered messages of that role; manually selected subsets retain their choices. Bulk controls apply across all selection pages, which display 80 messages at a time.
+
+Closing the popup does not stop an operation. Navigation to another conversation discards the capture; reloading the tab also loses it. Turn off **Show the export button on chatbot pages** for toolbar-only controls.
+
+The browser asks where to save by default. Check Downloads for completion after a download starts.
 
 ## Supported chatbots
 
@@ -58,7 +62,7 @@ Extraction uses the rendered page. Shared and signed-in pages can differ, and pr
 
 Markdown reserves the document title for level 1 and message headings for level 2. Headings within each message start at level 3 and retain their relative nesting, up to Markdown's six heading levels. Code and math blocks are not changed when heading levels are adjusted. HTML uses the same hierarchy, with numbered role labels beside the message body.
 
-The interface and HTML reading copy use a white background, monochrome controls, fine rules and small monospaced labels. HTML adapts to narrow screens and printing and makes no remote image or font requests.
+The interface uses a compact white layout with provider accents, fine rules and small role labels. HTML reading copies use a white, monochrome layout, adapt to narrow screens and printing, and make no remote image or font requests.
 
 Filenames follow `YYYY-MM-DD - Chatbot - Conversation title.ext`, using the browser's local export date. Title separators such as slashes and bullets become spaced hyphens. Branch labels are retained. Windows-invalid characters are removed and long titles are shortened without joining words together.
 
@@ -86,22 +90,31 @@ A Markdown viewer may contact image hosts when rendering URL images. The HTML re
 
 ## Capture settings and limits
 
-The collector finds the chat's scroll container, waits for the beginning to settle, then makes one downward pass. It retains rendered messages before each scroll and uses overlapping viewports, stable message IDs and available row indices to preserve order. It restores the original scroll position afterward.
+The exporter reads rendered messages rather than private chatbot APIs or hidden application stores. It chooses the least work supported by the page:
+
+- A reported total with every message index present can verify the history without scrolling.
+- When all messages remain rendered, a settled top check must retain the original messages and latest-message anchor. A bottom check is added when needed. No downward scan is required.
+- Virtualized chats, unrendered placeholders or disappearing messages require a downward scan. Each viewport is captured before advancing. Rendering changes and viewport coverage determine when it is safe to move; tall messages already captured in full can be skipped through in a larger step.
+
+Endpoint anchors alone cannot establish completeness on a virtualized page. The collector preserves overlaps, stable IDs and available row indices to order messages. It restores the previous viewport or bottom position afterward.
 
 | Setting | Default | Range |
 |---|---|---|
-| Wait after each scroll | 650 ms | 300–3,000 ms |
-| Scan time limit | 180 seconds | 15–900 seconds |
+| Maximum render wait | 650 ms | 300–3,000 ms |
+| History loading limit | 180 seconds | 15–900 seconds |
 
-Increase the wait for slow rendering or the time limit for long conversations. Disabling scanning captures only currently loaded messages. Reasoning can be included when it is already present in the page.
+Boundary checks use longer quiet windows to allow older messages to load, and visible loading indicators are awaited. Increase the render wait for slow pages or the loading limit for long conversations. Turn off **Verify full history when exporting all messages** to export only loaded messages. Reasoning can be included when it is present in the page.
 
 Capture status is recorded in every format:
 
-- `observed-edges`: both rendered edges settled without a detected concern. This does not prove server-side completeness.
-- `visible-only`: scanning was disabled.
-- `partial`: cancellation, a limit, a hidden tab, missing content, a count mismatch or another collection concern.
+- `reported-total`: all indices match the page's reported message total.
+- `observed-edges`: both rendered boundaries were verified without a detected concern.
+- `visible-only`: only loaded messages were read.
+- `partial`: cancellation, a limit, missing content, a count mismatch or another collection concern.
 
-The collector stops at 60 top checks, 3,000 downward steps, 10,000 messages, approximately 32 MB of serialized capture data or the configured time limit. A hidden tab stops the scan as partial because rendering can be throttled. Missing stable IDs, non-overlapping virtualized batches and unrendered placeholders produce warnings.
+A partial full-history check does not start a download automatically. Inspect its warning, retry **Load all**, or explicitly choose loaded messages. Settled boundaries and reported totals are DOM evidence, not proof of server-side completeness.
+
+The collector stops at 60 boundary checks, 3,000 scan iterations, 10,000 messages, approximately 32 MB of serialized capture data or the configured time limit. A hidden tab stops active history loading because rendering can be throttled. Missing stable IDs, non-overlapping virtualized batches and unrendered placeholders produce warnings.
 
 Collapsed content, unsent drafts, alternative answer branches and messages never supplied by the page are outside the capture. Captures do not survive tab reload or browser restart.
 
@@ -122,7 +135,7 @@ npm run check
 npm test
 ```
 
-DOM tests default to installed Chrome. Set `CE_BROWSER_CHANNEL=chromium` to use Playwright Chromium instead. Extension tests use Playwright Chromium, or a binary selected through `CE_CHROMIUM_PATH`, in a separate profile under `.local/qa`. See [Playwright's extension testing guide](https://playwright.dev/docs/chrome-extensions).
+DOM tests default to installed Chrome. Set `CE_BROWSER_CHANNEL=chromium` to use Playwright Chromium instead. Extension tests use Playwright Chromium, or a binary selected through `CE_CHROMIUM_PATH`, in a separate profile under `.local/qa`. The native toolbar test checks message space, controls and exports in Chrome's action popup. See [Playwright's extension testing guide](https://playwright.dev/docs/chrome-extensions).
 
 Additional commands:
 

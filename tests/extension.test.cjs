@@ -32,10 +32,8 @@ test('real MV3 extension: content script, popup messaging, selected transcript d
     const send = message => worker.evaluate(async ({ tabId, message }) => chrome.tabs.sendMessage(tabId, message), { tabId, message });
     await send({ type: 'ce:settings', settings: { scan: false, saveAs: false, pageButton: false } });
     assert.equal(await page.locator('[data-chat-export-ui="button"]').count(), 0);
-    await send({ type: 'ce:start' });
-    let state;
-    for (let i = 0; i < 30; i++) { state = await send({ type: 'ce:state' }); if (!state.running) break; await new Promise(r => setTimeout(r, 100)); }
-    assert.equal(state.messages.length, 2); assert.equal(state.warnings.length, 1);
+    let state = await send({ type: 'ce:state' });
+    assert.equal(state.messages.length, 2); assert.equal(state.warnings.length, 0);
     const response = await send({ type: 'ce:export', ids: [state.messages[0].id], format: 'json' });
     assert.ok(!response.error, response.error);
     let saved;
@@ -55,7 +53,7 @@ test('real MV3 extension: content script, popup messaging, selected transcript d
     await popup.addInitScript(({ tabId, url }) => { const query = chrome.tabs.query.bind(chrome.tabs); chrome.tabs.query = async options => options.active ? [{ id: tabId, url }] : query(options); }, { tabId, url });
     await popup.goto(`chrome-extension://${id}/src/popup.html`);
     await popup.getByRole('button', { name: 'Human', exact: true }).click();
-    assert.match(await popup.locator('.selection').textContent(), /1 of 2/);
+    assert.match(await popup.locator('.selection').textContent(), /1 \/ 2/);
     await popup.screenshot({ path: path.join(work, 'popup.png') });
     await popup.close(); await page.bringToFront();
     await send({ type: 'ce:settings', settings: { scan: false, saveAs: false, pageButton: true, downloadImages: true } });

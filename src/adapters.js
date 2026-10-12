@@ -20,7 +20,12 @@
   E.read = function (doc, provider, settings = E.defaults) {
     let nodes = [...doc.querySelectorAll(provider.selector)];
     if (!nodes.length && provider.fallback) nodes = [...doc.querySelectorAll(provider.fallback)];
-    nodes = nodes.filter(n => !nodes.some(other => other !== n && other.contains(n)) && !n.closest('[data-chat-export-ui]'));
+    const candidates = new Set(nodes);
+    nodes = nodes.filter(node => {
+      if (node.closest('[data-chat-export-ui]')) return false;
+      for (let parent = node.parentElement; parent; parent = parent.parentElement) if (candidates.has(parent)) return false;
+      return true;
+    });
     return nodes.map(node => {
       let role, body = node, row = node;
       switch (provider.id) {
