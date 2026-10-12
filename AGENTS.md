@@ -1,0 +1,12 @@
+# Project rules
+
+- This is a local Manifest V3 extension. It runs directly from the repository; no build step or runtime dependency installation.
+- Keep all original/private HTML, screenshots, saved chats, test profiles, exports and generated console bundles inside ignored `.local/`. Never commit their contents or conversation snippets. Packaging must use the explicit allowlist in `tools/package.cjs`.
+- All providers share the converter, collector, formats and UI. Add selectors and role/identity rules in `src/adapters.js`; do not fork entire exporters per provider. Console scripts are generated from these same modules.
+- Capture during a bounded top-to-bottom scan. Retain messages before scrolling, preserve duplicate prompts with different IDs, restore scroll position, and discard captures on route changes. Settled edges are evidence about the DOM, never proof of server-side completeness.
+- Resource ownership matters: Gemini's conversation container contains both roles. Collect user and model resources separately. Grok on X can put several response sections in one assistant message; extract the whole message rather than its first markdown wrapper.
+- Generated images can be inside buttons. Preserve those images while removing action labels, source favicons and avatars. Preserve TeX once at its math root; querying annotations on every ancestor collapses the whole response into one formula.
+- Use DOM construction and `textContent` for the live interface. Exported HTML must consist only of generated semantic markup, escaped text and validated URLs. Never execute embedded apps or open source/attachment controls automatically.
+- `npm test` covers synthetic browser regressions and real Chromium extension messaging/downloads. `npm run test:samples` checks local private fixtures without printing conversation text. Counts alone do not establish content fidelity; also verify tables, code, images, resource ownership and incomplete placeholders.
+- For extension tests, use a separate Chromium profile under `.local/qa`, never the user's browser profile. Close every task-created browser/server in `finally`. Keep network fixtures local. Chrome and Edge's branded builds cannot be loaded with extension flags; use Playwright Chromium or `CE_CHROMIUM_PATH`.
+- Keep the README's limitations and validation claims accurate when adapters change. No private APIs, page-state scraping, telemetry or remote runtime code.

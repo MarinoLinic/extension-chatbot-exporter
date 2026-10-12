@@ -1,0 +1,12 @@
+.local/
+.graveyard/
+node_modules/
+work/
+test-results/
+playwright-report/
+*.log
+*.zip
+*.crx
+*.pem
+image.png
+image-2.png
