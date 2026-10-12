@@ -21,7 +21,7 @@
     if (buttonHost) return;
     buttonHost = document.createElement('div'); buttonHost.setAttribute('data-chat-export-ui', 'button'); buttonHost.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483646';
     const shadow = buttonHost.attachShadow({ mode: 'closed' }), button = document.createElement('button');
-    button.textContent = '↓ Export chat'; button.title = 'Open Conversation Exporter'; button.style.cssText = 'font:600 13px system-ui;background:#2f624b;color:#fff;padding:11px 17px;border:1px solid #d4e1d4;border-radius:30px;box-shadow:0 4px 20px #162e2830;cursor:pointer'; button.onclick = showPanel; shadow.append(button); document.documentElement.append(buttonHost);
+    button.textContent = '↓ Export chat'; button.title = 'Open Conversation Exporter'; button.style.cssText = E.design.buttonCSS; button.onclick = showPanel; shadow.append(button); document.documentElement.append(buttonHost);
   }
   async function download(blob, filename, saveAs = settings.saveAs) {
     const url = URL.createObjectURL(blob);

@@ -1,6 +1,6 @@
 {
   "name": "chatbot-conversation-exporter",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Local browser extension for exporting rendered chatbot conversations",
   "scripts": {
@@ -10,5 +10,7 @@
     "check": "node tools/check.cjs",
     "package": "node tools/package.cjs"
   },
-  "devDependencies": { "playwright": "1.62.1" }
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
 }

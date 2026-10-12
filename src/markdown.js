@@ -5,7 +5,10 @@
   const thoughts = 'ms-thought-chunk,.thought-panel,[data-testid="thinking-content"],.thinking-content,.reasoning-content';
   const normalize = s => s.replace(/\u200b/g, '').replace(/\u00a0/g, ' ');
   const fence = s => '`'.repeat(Math.max(3, ...[...s.matchAll(/`+/g)].map(m => m[0].length + 1)));
-  const escapeText = s => normalize(s).replace(/([\\`*_[\]<>])/g, '\\$1').replace(/(^|\n)(\s*)([#>]|\d+\.)/g, '$1$2\\$3');
+  const escapeText = (s, heading) => {
+    const escaped = normalize(s).replace(/([\\`*_[\]<>])/g, '\\$1');
+    return heading ? escaped : escaped.replace(/(^|\n)([ \t]*)([#>])/g, '$1$2\\$3').replace(/(^|\n)([ \t]*)(\d+)([.)])(?=[ \t])/g, '$1$2$3\\$4');
+  };
   const mark = (s, marker) => s.trim() ? s.replace(/^(\s*)([\s\S]*?)(\s*)$/, (_, a, b, c) => a + marker + b + marker + c) : s;
 
   E.convert = function (node, { base = node.ownerDocument?.URL, includeThoughts = false } = {}) {
@@ -16,10 +19,10 @@
       const annotation = el.querySelector('annotation[encoding="application/x-tex"]');
       return annotation ? annotation.textContent : null;
     }
-    function render(el, depth = 0, preserve = false) {
+    function render(el, depth = 0, preserve = false, heading = false) {
       if (el.nodeType === 3) {
         const text = preserve ? normalize(el.textContent) : normalize(el.textContent).replace(/\s+/g, ' ');
-        return { md: escapeText(text), html: E.escapeHTML(text) };
+        return { md: escapeText(text, heading), html: E.escapeHTML(text) };
       }
       if (el.nodeType !== 1) return { md: '', html: '' };
       const tag = el.tagName.toLowerCase();
@@ -71,7 +74,7 @@
       if (tag === 'table') return table(el, depth);
       if (tag === 'ul' || tag === 'ol') return list(el, depth);
       const pre = preserve || el.matches('.whitespace-pre-wrap,.query-text,.query-text-line') || (tag === 'div' && /white-space:\s*pre/.test(el.getAttribute('style') || ''));
-      const children = [...el.childNodes].map(c => render(c, depth, pre));
+      const children = [...el.childNodes].map(c => render(c, depth, pre, heading || /^h[1-6]$/.test(tag)));
       let md = children.map(c => c.md).join(''), html = children.map(c => c.html).join('');
       if (tag === 'a') {
         const url = E.url(el.getAttribute('href'), base);

@@ -23,7 +23,37 @@
   E.escapeHTML = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   E.label = value => String(value).replace(/[\[\]\\]/g, '\\$&').replace(/\r?\n/g, ' ');
   E.mdURL = value => String(value).replace(/[<>\s()\\]/g, c => encodeURIComponent(c));
-  E.filename = value => String(value).normalize('NFC').replace(/[\x00-\x1f\x7f<>:"/\\|?*]/g, '').replace(/[ .]+$/g, '').replace(/\s+/g, ' ').slice(0, 80).trim() || 'Conversation';
+  E.filename = value => {
+    let name = String(value).normalize('NFC').replace(/[\x00-\x1f\x7f]/g, '').replace(/[/\\|:•]+/g, ' - ').replace(/[<>"?*]/g, '').replace(/\s*-\s*(?:-\s*)+/g, ' - ').replace(/\s+/g, ' ').replace(/^[ .-]+|[ .-]+$/g, '');
+    if (name.length > 90) { name = name.slice(0, 90); if (/\s/.test(name.slice(-15))) name = name.replace(/\s+\S*$/, ''); }
+    name = name.replace(/[ .-]+$/g, '');
+    return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) ? 'Conversation - ' + name : name || 'Conversation';
+  };
+  E.titleText = value => String(value).replace(/([\\`*_[\]<>])/g, '\\$1').replace(/[\r\n]+/g, ' ');
+  E.exportDate = iso => { const date = new Date(iso); return Number.isNaN(date.getTime()) ? String(iso).slice(0, 10) : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; };
+  E.mapMarkdownLines = (value, transform) => {
+    let fence = null, math = false;
+    return value.split('\n').map(line => {
+      const match = line.match(/^\s*(?:(?:[-+*]|\d+[.)])\s+)?(`{3,}|~{3,})(.*)$/);
+      if (fence) { if (match && match[1][0] === fence.character && match[1].length >= fence.length && !match[2].trim()) fence = null; return line; }
+      if (math) { if (/^\s*\$\$\s*$/.test(line)) math = false; return line; }
+      if (match) { fence = { character: match[1][0], length: match[1].length }; return line; }
+      if (/^\s*\$\$\s*$/.test(line)) { math = true; return line; }
+      return transform(line);
+    }).join('\n');
+  };
+  E.nestMarkdownHeadings = value => {
+    let minimum = 6, found = false;
+    E.mapMarkdownLines(value, line => { const match = line.match(/^ {0,3}(#{1,6})\s/); if (match) { minimum = Math.min(minimum, match[1].length); found = true; } return line; });
+    return found ? E.mapMarkdownLines(value, line => line.replace(/^( {0,3})(#{1,6})(\s)/, (_, indent, level, space) => indent + '#'.repeat(Math.min(6, level.length + 3 - minimum)) + space)) : value;
+  };
+  E.nestHTMLHeadings = value => {
+    const levels = [...value.matchAll(/<h([1-6])>/g)].map(match => Number(match[1]));
+    if (!levels.length) return value;
+    const offset = 3 - Math.min(...levels);
+    return value.replace(/<(\/?)h([1-6])>/g, (_, close, level) => '<' + close + 'h' + Math.min(6, Number(level) + offset) + '>');
+  };
+  E.plainMarkdown = value => E.mapMarkdownLines(value, line => line.replace(/^ {0,3}#{1,6}\s/, '').split(/(`+[^`]*`+|\$[^$\n]+\$)/g).map((part, index) => index % 2 ? part : part.replace(/(?<!\\)\*\*([^*]+)(?<!\\)\*\*/g, '$1').replace(/(?<![\\*])\*([^*\n]+)(?<!\\)\*(?!\*)/g, '$1').replace(/\\([\\`*_[\]<>#>.()|])/g, '$1')).join(''));
   E.hash = value => { let h = 2166136261; for (let i = 0; i < value.length; i++) h = Math.imul(h ^ value.charCodeAt(i), 16777619); return (h >>> 0).toString(36); };
   E.preview = value => value.replace(/!\[([^\]]*)\]\([^)]*\)/g, 'Image: $1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/^`{3,}[\w+-]*$/gm, '').replace(/[#*_`]/g, '').replace(/\s+/g, ' ').trim().slice(0, 180);
   E.sleep = ms => new Promise(resolve => setTimeout(resolve, ms));

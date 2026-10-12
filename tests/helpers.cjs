@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
-const modules = ['common', 'markdown', 'adapters', 'collector', 'formats', 'ui'];
+const modules = ['common', 'design', 'markdown', 'adapters', 'collector', 'formats', 'ui'];
 async function browser() { return chromium.launch({ headless: true, channel: process.env.CE_BROWSER_CHANNEL || 'chrome' }); }
 async function setup(browser, html, url = 'https://gemini.google.com/app/test') {
   const page = await browser.newPage();

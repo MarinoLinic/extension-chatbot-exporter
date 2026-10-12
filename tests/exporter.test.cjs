@@ -111,10 +111,53 @@ test('UI selects roles and individual messages and persists popup-only mode', as
   assert.match(await page.locator('.selection').textContent(), /2 of 3/);
   await page.getByLabel('Select user message 1').uncheck();
   await page.getByText('Export settings', { exact: true }).click();
+  const panelBounds = await page.locator('.ce').boundingBox();
+  const exportBounds = await page.getByRole('button', { name: 'Export selected', exact: true }).boundingBox();
+  assert.ok(exportBounds.y + exportBounds.height <= panelBounds.y + panelBounds.height, 'Export action stays inside the panel while settings are open');
   await page.getByText('Show the export button on chatbot pages', { exact: true }).click();
   await page.getByRole('button', { name: 'Export selected', exact: true }).click();
   const commands = await page.evaluate(() => commands);
   assert.deepEqual(commands.find(c => c.type === 'ce:export').ids, ['u2']);
   assert.equal(commands.filter(c => c.type === 'ce:settings').at(-1).settings.pageButton, false);
+  await page.close();
+});
+
+test('numbered headings retain punctuation, message sections contain body headings, and code is untouched', async () => {
+  const page = await setup(chrome, '<article><h2>1. NES / SNES</h2><h3><strong>2. Native ports</strong></h3><p>1. Literal numbered prose</p><pre><code># Literal code heading\n## Also code\n\n\nvalue = "**literal**";</code></pre></article>');
+  const result = await page.evaluate(() => {
+    const converted = ChatExport.convert(document.querySelector('article'));
+    const a = { title: 'A / B *literal*', provider: { id: 'gemini', name: 'Gemini' }, sourceURL: location.href, exportedAt: '2026-10-12T10:03:36.991Z', capture: { status: 'observed-edges', note: 'DOM only', warnings: [] }, messages: [{ id: 'a', role: 'assistant', ...converted, attachments: [], toolNotes: [] }] };
+    return { converted, md: ChatExport.format(a, 'md'), txt: ChatExport.format(a, 'txt'), html: ChatExport.format(a, 'html') };
+  });
+  assert.match(result.converted.markdown, /^## 1\. NES \/ SNES/m);
+  assert.doesNotMatch(result.converted.markdown, /\\[12]\./);
+  assert.match(result.converted.markdown, /1\\\. Literal numbered prose/);
+  assert.match(result.md.content, /^## 1\. Gemini/m);
+  assert.match(result.md.content, /^### 1\. NES \/ SNES/m);
+  assert.match(result.md.content, /^#### \*\*2\. Native ports\*\*/m);
+  assert.match(result.md.content, /```\n# Literal code heading\n## Also code\n\n\nvalue = "\*\*literal\*\*";\n```/);
+  assert.match(result.txt.content, /# Literal code heading\n## Also code\n\n\nvalue = "\*\*literal\*\*";/);
+  assert.match(result.txt.content, /1\. Literal numbered prose/);
+  assert.match(result.txt.content, /^A \/ B \*literal\*$/m);
+  assert.match(result.html.content, /<h2>Gemini<\/h2>/); assert.match(result.html.content, /<h3>1\. NES \/ SNES<\/h3>/);
+  assert.equal(result.md.filename, '2026-10-12 - Gemini - A - B literal.md');
+  await page.close();
+});
+
+test('heading normalization skips longer fences, list code fences and display math', async () => {
+  const page = await setup(chrome, '<main></main>');
+  const result = await page.evaluate(() => {
+    const body = ['## Section', '#### Detail', '````md', '# code', '```', '## still code', '````', '- ```md', '    # nested code', '    ```', '$$', '# math content', '$$', '### Next'].join('\n');
+    return ChatExport.nestMarkdownHeadings(body);
+  });
+  assert.match(result, /^### Section/m); assert.match(result, /^##### Detail/m); assert.match(result, /^#### Next/m);
+  assert.match(result, /````md\n# code\n```\n## still code\n````/); assert.match(result, /    # nested code/); assert.match(result, /\$\$\n# math content\n\$\$/);
+  await page.close();
+});
+
+test('filenames preserve word boundaries and branch names while rejecting Windows path characters', async () => {
+  const page = await setup(chrome, '<main></main>');
+  const result = await page.evaluate(() => ['Branch • Nintendo Game Decompilations and Ports', 'NES/SNES: Ports | Builds', 'CON', '../ ?<> ', 'A'.repeat(100)].map(ChatExport.filename));
+  assert.equal(result[0], 'Branch - Nintendo Game Decompilations and Ports'); assert.equal(result[1], 'NES - SNES - Ports - Builds'); assert.equal(result[2], 'Conversation - CON'); assert.equal(result[3], 'Conversation'); assert.equal(result[4].length, 90);
   await page.close();
 });
