@@ -118,6 +118,10 @@
       try {
         if (message.type !== 'ce:cancel') await saveSettings();
         const result = await bridge(message); if (result?.error) throw new Error(result.error);
+        if (message.type === 'ce:copy') {
+          if (typeof result?.copyText !== 'string') throw new Error('Could not prepare the conversation for copying.');
+          await navigator.clipboard.writeText(result.copyText);
+        }
         await poll();
         if (message.type === 'ce:copy') {
           feedback = 'Copied to clipboard'; render(state);

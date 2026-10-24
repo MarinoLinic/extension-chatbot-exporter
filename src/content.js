@@ -103,7 +103,7 @@
     state.downloading = true; state.phase = copy ? 'Preparing copy' : 'Preparing download'; state.error = null;
     try {
       const output = E.format(selected, format);
-      if (copy) { await navigator.clipboard.writeText(output.content); state.phase = 'Copied to clipboard'; return; }
+      if (copy) { state.phase = 'Copy ready'; return { copyText: output.content }; }
       await download(new Blob([output.content], { type: output.mime }), output.filename);
       if (settings.downloadImages) {
         const images = E.unique(selected.messages.flatMap(m => m.images), i => i.url), manifest = [];
@@ -142,7 +142,8 @@
     }
     if (message.type === 'ce:export' || message.type === 'ce:copy') {
       if (message.token !== undefined && message.token !== token) throw new Error('Conversation changed. Refresh the selection.');
-      await exportSelected(message.ids, message.format, message.selection, message.type === 'ce:copy'); return snapshot();
+      const result = await exportSelected(message.ids, message.format, message.selection, message.type === 'ce:copy');
+      return result ? { ...snapshot(), ...result } : snapshot();
     }
     throw new Error('Unknown exporter command');
   }
