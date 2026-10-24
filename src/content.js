@@ -85,7 +85,7 @@
       return abort.signal.aborted ? null : result;
     } finally { if (operation === generation) { state.running = false; controller = null; } }
   }
-  async function exportSelected(ids, format, selection) {
+  async function exportSelected(ids, format, selection, copy = false) {
     if (state.running || state.downloading) throw new Error('An operation is already running.');
     refreshLoaded();
     if (!archive?.messages.length || archive.sourceURL !== location.href) throw new Error('No messages available yet.');
@@ -100,9 +100,10 @@
     const selected = E.selectArchive(archive, chosen);
     if (!selected.messages.length) throw new Error('Select at least one available message.');
     const generation = operation;
-    state.downloading = true; state.phase = 'Preparing download'; state.error = null;
+    state.downloading = true; state.phase = copy ? 'Preparing copy' : 'Preparing download'; state.error = null;
     try {
       const output = E.format(selected, format);
+      if (copy) { await navigator.clipboard.writeText(output.content); state.phase = 'Copied to clipboard'; return; }
       await download(new Blob([output.content], { type: output.mime }), output.filename);
       if (settings.downloadImages) {
         const images = E.unique(selected.messages.flatMap(m => m.images), i => i.url), manifest = [];
@@ -139,9 +140,9 @@
       const generation = operation;
       verify().catch(error => { if (generation === operation) { state.error = error.message; state.phase = 'Stopped'; } }); return snapshot();
     }
-    if (message.type === 'ce:export') {
+    if (message.type === 'ce:export' || message.type === 'ce:copy') {
       if (message.token !== undefined && message.token !== token) throw new Error('Conversation changed. Refresh the selection.');
-      await exportSelected(message.ids, message.format, message.selection); return snapshot();
+      await exportSelected(message.ids, message.format, message.selection, message.type === 'ce:copy'); return snapshot();
     }
     throw new Error('Unknown exporter command');
   }

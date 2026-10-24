@@ -1,6 +1,6 @@
 # Conversation Exporter
 
-Save the chatbot conversation open in your browser as Markdown, JSON, HTML, text or CSV. Select individual messages, preserve source links and formatting, and optionally download images.
+Copy or download the chatbot conversation open in your browser as Markdown, JSON, HTML, text or CSV. Select individual messages, preserve source links and formatting, and optionally download images.
 
 Conversation Exporter runs locally. It needs no API key, account, server or build step.
 
@@ -20,7 +20,7 @@ The extension targets Chromium browsers. Firefox is not validated.
 1. Open a conversation and wait for the response to finish.
 2. Click **↓ Export chat** on the page or the toolbar icon. Messages already rendered on the page are immediately available for selection.
 3. Choose messages with **All**, **Human**, **Assistant**, **None**, **Invert** or individual checkboxes.
-4. Choose a format and click **Export selected**.
+4. Choose a format, then click **Export selected** to download it or **Copy** to put it on the clipboard.
 
 Exporting all messages or all messages of one role verifies history automatically. If the page already contains the whole transcript, the exporter checks its boundaries rather than scanning through every screen. Unchanged verified history is reused for later exports. An individually selected subset exports directly from the loaded messages.
 
@@ -120,7 +120,7 @@ Collapsed content, unsent drafts, alternative answer branches and messages never
 
 ## Privacy
 
-There is no telemetry, external service or private chatbot API connection. Conversations remain in the source tab's memory until saved. Only preferences persist in extension storage.
+There is no telemetry, external service or private chatbot API connection. Conversations remain in the source tab's memory until downloaded or copied. Only preferences persist in extension storage. The **Copy** action writes the selected export to the system clipboard; the extension does not read clipboard contents.
 
 Optional image downloads contact image hosts and can use your browser's session cookies. Signed URLs can contain access credentials. Treat exports as private when their conversations or resource URLs are private. See [PRIVACY.md](PRIVACY.md) for permissions and network behavior.
 

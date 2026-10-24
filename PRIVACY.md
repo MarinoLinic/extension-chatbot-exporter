@@ -4,12 +4,13 @@ Conversation Exporter runs on your computer. It has no telemetry, analytics, acc
 
 The content scripts read rendered messages on the supported chatbot domains. They do not read passwords, cookies, access tokens, hidden application stores or private API responses. Gemini source-chip metadata is decoded only when it appears on a source element in the DOM.
 
-Collected conversations live in the source tab's content-script memory. Closing the popup preserves them. Reloading or leaving the conversation discards them. Only preferences are written to `chrome.storage.local`. Downloads are ordinary files and remain wherever you save them.
+Collected conversations live in the source tab's content-script memory. Closing the popup preserves them. Reloading or leaving the conversation discards them. Only preferences are written to `chrome.storage.local`. Downloads are ordinary files and remain wherever you save them. When you click **Copy**, the selected export is written to the system clipboard. The extension never reads clipboard contents.
 
 The extension uses:
 
 - `storage` for preferences.
 - `downloads` for the selected conversation and optional images.
+- `clipboardWrite` for the **Copy** action. Chrome may describe this as permission to modify data you copy and paste; it is used only when you click **Copy**.
 - `activeTab` for the toolbar popup's access to the tab you invoke it on.
 - `scripting` to initialize an already-open tab after installation or an extension reload.
 
