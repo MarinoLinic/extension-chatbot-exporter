@@ -5,6 +5,50 @@ let chrome;
 before(async () => { chrome = await browser(); });
 after(async () => { await chrome?.close(); });
 
+test('ChatGPT keeps distinct prompts that reuse a search key and reports empty responses', async () => {
+  const page = await setup(chrome, `
+    <div data-chatgpt-search-message-ids="first"><div data-content-search-unit-key="shared"><div data-user-message-bubble>First prompt</div></div></div>
+    <div data-chatgpt-selection-message-id="reply"><div data-markdown-text-style="assistant-message"></div></div>
+    <div data-chatgpt-search-message-ids="second"><div data-content-search-unit-key="shared"><div data-user-message-bubble>Second prompt</div></div></div>`,
+    'https://chatgpt.com/c/branch');
+  const archive = await page.evaluate(() => ChatExport.loadedArchive({ provider: ChatExport.provider(location.href) }));
+  assert.deepEqual(archive.messages.map(message => message.markdown), ['First prompt', 'Second prompt']);
+  assert.equal(archive.capture.status, 'partial');
+  assert.match(archive.capture.warnings.join(' '), /no rendered content/);
+  await page.close();
+});
+
+test('Gemini and AI Studio share safe conversion of code output and preview controls', async () => {
+  const body = '<code-block><pre><code class="language-python">print(2)</code></pre><pre><code class="code-result-container">2</code></pre></code-block><immersive-entry-chip><button aria-label="Open sample">Open</button></immersive-entry-chip>';
+  for (const [url, html] of [
+    ['https://gemini.google.com/app/test', `<model-response>${body}</model-response>`],
+    ['https://aistudio.google.com/prompts/test', `<ms-chat-turn><div class="turn-content">${body}</div></ms-chat-turn>`]
+  ]) {
+    const page = await setup(chrome, html, url);
+    const archive = await page.evaluate(() => ChatExport.loadedArchive({ provider: ChatExport.provider(location.href) }));
+    assert.match(archive.messages[0].markdown, /python\nprint\(2\)[\s\S]*Code output[\s\S]*\n2\n/);
+    assert.equal(archive.messages[0].artifacts[0].title, 'Open sample');
+    assert.equal(archive.capture.status, 'partial');
+    await page.close();
+  }
+});
+
+test('an oversized table preserves readable text and a renderer error falls back to a text file', async () => {
+  const cells = '<td rowspan="100" colspan="100">Cell text</td>'.repeat(11);
+  const page = await setup(chrome, `<model-response><p>Before the table</p><table><tr>${cells}</tr></table><p>After the table</p><button>Ignore this control</button></model-response>`);
+  const { archive, output } = await page.evaluate(() => {
+    const archive = ChatExport.loadedArchive({ provider: ChatExport.provider(location.href) });
+    ChatExport.reader = () => { throw new Error('Synthetic renderer failure'); };
+    return { archive, output: ChatExport.formatAvailable(archive, 'html') };
+  });
+  assert.equal(archive.capture.status, 'partial');
+  assert.match(output.filename, /\.txt$/);
+  assert.match(output.content, /Before the table[\s\S]*Cell text[\s\S]*After the table/);
+  assert.doesNotMatch(output.content, /Ignore this control/);
+  assert.match(output.content, /exported as text/);
+  await page.close();
+});
+
 test('semantic export preserves prose around math, deep code fences, tables, links and nested lists', async () => {
   const page = await setup(chrome, `<article><p>Before <span class="katex"><math><annotation encoding="application/x-tex">x^2 + y^2</annotation></math><span aria-hidden="true">duplicate visual</span></span> after.</p><div class="math-block" data-math="E=mc^2"></div><pre><code class="language-js">const s = '\x60\x60\x60\x60';\n\n\n  let x = 1;</code></pre><ol start="3"><li>First<ul><li>Nested</li></ul></li><li value="7">Later</li></ol><table><tr><th colspan="2">A | B</th></tr><tr><td rowspan="2">1</td><td>2</td></tr><tr><td><a href="/source?q=(x)">Source</a></td></tr></table><a href="javascript:alert(1)">Unsafe</a><img src="https://images.example/a.png" alt="Sketch"><iframe srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;"> </iframe></article>`);
   const r = await page.evaluate(() => ChatExport.convert(document.querySelector('article')));

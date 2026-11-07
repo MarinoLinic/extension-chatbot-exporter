@@ -17,12 +17,12 @@ The extension targets Chromium browsers. Firefox is not validated.
 
 ## Export a conversation
 
-1. Open a conversation and wait for the response to finish.
+1. Open a conversation. Wait for the response to finish if you want the complete reply.
 2. Click **↓ Export chat** on the page or the toolbar icon. Messages already rendered on the page are immediately available for selection.
 3. Choose messages with **All**, **Human**, **Assistant**, **None**, **Invert** or individual checkboxes.
 4. Choose a format, then click **Export selected** to download it or **Copy** to put it on the clipboard.
 
-Exporting all messages or all messages of one role verifies history automatically. If the page already contains the whole transcript, the exporter checks its boundaries rather than scanning through every screen. Unchanged verified history is reused for later exports. An individually selected subset exports directly from the loaded messages.
+Exporting all messages or all messages of one role verifies history automatically once the response has finished. If the page already contains the whole transcript, the exporter checks its boundaries rather than scanning through every screen. Unchanged verified history is reused for later exports. An individually selected subset or a response still in progress exports directly from the loaded messages.
 
 **Load all** lets you load and inspect the full history before exporting. **Refresh messages** rereads the current page without scrolling. These are optional; there is no required collection step. **Cancel** stops history loading without starting a download.
 
@@ -32,7 +32,7 @@ Selection is preserved when the page updates. Bulk role selection includes newly
 
 Closing the popup does not stop an operation. Navigation to another conversation discards the capture; reloading the tab also loses it. Turn off **Show the export button on chatbot pages** for toolbar-only controls.
 
-The browser asks where to save by default. Check Downloads for completion after a download starts.
+The browser asks where to save by default. Check Downloads for completion after a download starts. If a format cannot be created, the exporter saves the available messages as text.
 
 ## Supported chatbots
 
@@ -112,7 +112,7 @@ Capture status is recorded in every format:
 - `visible-only`: only loaded messages were read.
 - `partial`: cancellation, a limit, missing content, a count mismatch or another collection concern.
 
-A partial full-history check does not start a download automatically. Inspect its warning, retry **Load all**, or explicitly choose loaded messages. Settled boundaries and reported totals are DOM evidence, not proof of server-side completeness.
+When a history check is incomplete, **Export selected** still saves the messages it collected. Open the warning above the message list for details. The file includes the capture warning. Use **Load all** to retry the check or **Refresh messages** to reread the page. Settled boundaries and reported totals describe what the page rendered.
 
 The collector stops at 60 boundary checks, 3,000 scan iterations, 10,000 messages, approximately 32 MB of serialized capture data or the configured time limit. A hidden tab stops active history loading because rendering can be throttled. Missing stable IDs, non-overlapping virtualized batches and unrendered placeholders produce warnings.
 
@@ -139,7 +139,7 @@ DOM tests default to installed Chrome. Set `CE_BROWSER_CHANNEL=chromium` to use 
 
 Additional commands:
 
-- `npm run test:samples`: check optional local HTML fixtures without printing conversation text. Fixtures absent from a clean checkout are skipped.
+- `npm run test:samples`: check optional HTML fixtures in `.local/samples/` without running page scripts or printing conversation text. Fixtures absent from a clean checkout are skipped.
 - `npm run console`: generate a universal console exporter and nine provider-specific scripts under `.local/console`. Edit their settings to change format or timing. Message selection and image-file downloads are extension features.
 - `npm run package`: create a runtime-only unpacked release and ZIP under `.local/release`. Packaging uses an explicit file allowlist.
 

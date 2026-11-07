@@ -1,10 +1,14 @@
 (function () {
   'use strict';
   const E = globalThis.ChatExport;
-  const skipped = 'script,style,noscript,svg,button,input,textarea,select,nav,mat-icon,gem-icon,message-actions,ms-chat-turn-options,thinking-overlay,source-footnote,.sr-only,.cdk-visually-hidden,.turn-action-controls,[data-testid="message-actions"],.table-footer';
+  const skipped = 'script,style,noscript,svg,button,input,textarea,select,nav,mat-icon,gem-icon,message-actions,ms-chat-turn-options,thinking-overlay,source-footnote,.sr-only,.cdk-visually-hidden,.turn-action-controls,[data-testid="message-actions"],.table-footer,.author-label,.turn-information,.model-error';
   const thoughts = 'ms-thought-chunk,.thought-panel,[data-testid="thinking-content"],.thinking-content,.reasoning-content';
   const normalize = s => s.replace(/\u200b/g, '').replace(/\u00a0/g, ' ');
-  const fence = s => '`'.repeat(Math.max(3, ...[...s.matchAll(/`+/g)].map(m => m[0].length + 1)));
+  const fence = (s, minimum = 3) => {
+    let length = minimum;
+    for (const match of s.matchAll(/`+/g)) length = Math.max(length, match[0].length + 1);
+    return '`'.repeat(length);
+  };
   const escapeText = (s, heading) => {
     const escaped = normalize(s).replace(/([\\`*_[\]<>])/g, '\\$1');
     return heading ? escaped : escaped.replace(/(^|\n)([ \t]*)([#>])/g, '$1$2\\$3').replace(/(^|\n)([ \t]*)(\d+)([.)])(?=[ \t])/g, '$1$2$3\\$4');
@@ -13,6 +17,8 @@
 
   E.convert = function (node, { base = node.ownerDocument?.URL, includeThoughts = false } = {}) {
     const links = [], images = [], artifacts = [];
+    let degraded = false;
+    const hidden = el => el.hidden || el.getAttribute('aria-hidden') === 'true' || (!includeThoughts && el.matches(thoughts));
     function tex(el) {
       if (el.hasAttribute('data-math')) return el.getAttribute('data-math');
       if (!el.matches('.katex,.katex-display,math,ms-katex')) return null;
@@ -26,6 +32,7 @@
       }
       if (el.nodeType !== 1) return { md: '', html: '' };
       const tag = el.tagName.toLowerCase();
+      if (hidden(el)) return { md: '', html: '' };
       const latex = tex(el);
       if (latex !== null) {
         const display = el.matches('.katex-display,.math-block,math[display="block"]') || el.closest('.katex-display') === el;
@@ -48,7 +55,14 @@
         const content = [...el.querySelectorAll('img')].map(img => render(img, depth));
         return { md: content.map(c => c.md).join('\n'), html: content.map(c => c.html).join('') };
       }
-      if (el.matches(skipped) || el.hidden || el.getAttribute('aria-hidden') === 'true' || (!includeThoughts && el.matches(thoughts))) return { md: '', html: '' };
+      if (el.matches(skipped)) return { md: '', html: '' };
+      if (tag === 'immersive-entry-chip' && !el.querySelector('iframe')) {
+        const button = el.querySelector('button');
+        const title = el.querySelector('.chip-title,.title')?.textContent.trim() || button?.getAttribute('aria-label') || 'Canvas';
+        artifacts.push({ kind: 'embedded-preview', title, url: null, note: 'Content is behind a page control' });
+        degraded = true;
+        return { md: `\n\n> ${E.label(title)} (preview content unavailable)\n\n`, html: `<p>${E.escapeHTML(title)} (preview content unavailable)</p>` };
+      }
       if (tag === 'iframe') {
         const url = E.url(el.getAttribute('src'), base);
         const source = el.getAttribute('srcdoc') || null;
@@ -57,10 +71,25 @@
         return { md: '\n\n' + text + (source ? `\n\n${fence(source)}html\n${source}\n${fence(source)}` : '') + '\n\n', html: `<p>${url ? `<a href="${E.escapeHTML(url)}" rel="noreferrer">Embedded preview</a>` : 'Embedded preview (no accessible URL)'}</p>${source ? `<pre><code>${E.escapeHTML(source)}</code></pre>` : ''}` };
       }
       if (tag === 'pre' || tag === 'code-block' || el.matches('[data-streamdown="code-block"]')) {
-        const code = el.querySelector('code') || el.querySelector('.code-block-body') || el;
+        const code = el.querySelector('code:not(.code-result-container),pre,.code-block-body') || el;
         const text = normalize(code.textContent).replace(/\n$/, '');
-        const lang = (code.className || '').match(/language-([\w+-]+)/)?.[1] || el.querySelector('.code-block-decoration span')?.textContent.trim().replace(/[^\w+-]/g, '') || '';
-        return { md: `\n\n${fence(text)}${lang}\n${text}\n${fence(text)}\n\n`, html: `<pre><code${lang ? ` class="language-${E.escapeHTML(lang)}"` : ''}>${E.escapeHTML(text)}</code></pre>` };
+        const lang = (code.getAttribute('class') || '').match(/language-([\w+-]+)/)?.[1] || code.querySelector('code')?.getAttribute('class')?.match(/language-([\w+-]+)/)?.[1] || el.querySelector('.code-block-decoration span')?.textContent.trim().replace(/[^\w+-]/g, '') || '';
+        const delimiter = fence(text);
+        const result = { md: `\n\n${delimiter}${lang}\n${text}\n${delimiter}\n\n`, html: `<pre><code${lang ? ` class="language-${E.escapeHTML(lang)}"` : ''}>${E.escapeHTML(text)}</code></pre>` };
+        const output = tag === 'code-block' && el.querySelector('.code-result-container')?.closest('pre');
+        if (output && output.textContent.trim()) {
+          const rendered = render(output, depth);
+          result.md += '**Code output**' + rendered.md;
+          result.html += '<p><strong>Code output</strong></p>' + rendered.html;
+        }
+        return result;
+      }
+      if (/^(audio|video|object|embed|canvas)$/.test(tag)) {
+        const url = E.url(el.getAttribute('src') || el.getAttribute('data') || el.querySelector('source[src]')?.getAttribute('src'), base);
+        const label = el.getAttribute('aria-label') || el.title || ({ audio: 'Audio', video: 'Video', canvas: 'Canvas' })[tag] || 'Embedded content';
+        artifacts.push({ kind: tag, title: label, url: url || null, note: url ? 'Link to media' : 'No accessible URL' });
+        if (!url) degraded = true;
+        return { md: url ? `\n\n[${E.label(label)}](${E.mdURL(url)})\n\n` : `\n\n> ${E.label(label)} (no accessible URL)\n\n`, html: url ? `<p><a href="${E.escapeHTML(url)}" rel="noreferrer">${E.escapeHTML(label)}</a></p>` : `<p>${E.escapeHTML(label)} (no accessible URL)</p>` };
       }
       if (tag === 'img') {
         // Ignore file-type icons and avatars; actual image attachments remain resources.
@@ -89,7 +118,7 @@
       else if (tag === 'del' || tag === 's') { md = mark(md, '~~'); html = `<del>${html}</del>`; }
       else if (tag === 'code') {
         const text = normalize(el.textContent);
-        const f = '`'.repeat(Math.max(1, ...[...text.matchAll(/`+/g)].map(m => m[0].length + 1)));
+        const f = fence(text, 1);
         md = f + (text.includes('`') ? ' ' : '') + text + (text.includes('`') ? ' ' : '') + f;
         html = `<code>${E.escapeHTML(text)}</code>`;
       } else if (tag === 'br') { md = '  \n'; html = '<br>'; }
@@ -134,6 +163,7 @@
           const value = result.md.trim().replace(/\n+/g, '<br>').replace(/(?<!\\)\|/g, '\\|');
           // Bound malicious/malformed spans to prevent unbounded expansion.
           const rs = Math.min(100, Math.max(1, cell.rowSpan || 1)), cs = Math.min(100, Math.max(1, cell.colSpan || 1));
+          if ((col + cs) * Math.max(el.rows.length, r + rs) > 100000) throw new Error('Table exceeds conversion limit.');
           for (let i = 0; i < rs; i++) { grid[r + i] ||= []; for (let j = 0; j < cs; j++) grid[r + i][col + j] = i || j ? '' : value; }
           const tag = cell.tagName.toLowerCase();
           h.push(`<${tag} rowspan="${rs}" colspan="${cs}">${result.html}</${tag}>`);
@@ -142,12 +172,27 @@
         htmlRows.push('<tr>' + h.join('') + '</tr>');
       }
       if (!grid.length) return { md: '', html: '' };
-      const width = Math.max(...grid.map(r => r.length));
+      const width = grid.reduce((max, row) => Math.max(max, row.length), 0);
+      if (width * grid.length > 100000) throw new Error('Table exceeds conversion limit.');
       const line = row => '| ' + Array.from({ length: width }, (_, i) => row[i] || '').join(' | ') + ' |';
       return { md: '\n\n' + [line(grid[0]), '| ' + Array(width).fill('---').join(' | ') + ' |', ...grid.slice(1).map(line)].join('\n') + '\n\n', html: `<div class="table-wrap"><table>${htmlRows.join('')}</table></div>` };
     }
-    const result = render(node);
-    // Preserve blank lines inside fenced code; only trim document boundaries.
-    return { markdown: E.cleanMarkdown(result.md), html: result.html, links: E.unique(links, l => l.url), images: E.unique(images, i => i.url), artifacts };
+    try {
+      const result = render(node);
+      return { markdown: E.cleanMarkdown(result.md), html: result.html, links: E.unique(links, l => l.url), images: E.unique(images, i => i.url), artifacts, degraded };
+    } catch {
+      // Keep readable text if this message's structure cannot be converted.
+      const walker = node.ownerDocument.createTreeWalker(node, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+        acceptNode: el => el.nodeType === 1 && (hidden(el) || el.matches(skipped)) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+      });
+      const parts = [];
+      for (let el = walker.nextNode(); el; el = walker.nextNode()) {
+        if (el.nodeType === 3) parts.push(normalize(el.textContent));
+        else if (el.matches('p,div,br,li,pre,tr,h1,h2,h3,h4,h5,h6')) parts.push('\n');
+        else if (el.matches('td,th')) parts.push(' ');
+      }
+      const plain = parts.join('').trim();
+      return { markdown: escapeText(plain), html: plain ? `<pre>${E.escapeHTML(plain)}</pre>` : '', links: E.unique(links, l => l.url), images: E.unique(images, i => i.url), artifacts, degraded: true };
+    }
   };
 })(globalThis);

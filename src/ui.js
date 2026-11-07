@@ -17,7 +17,9 @@
     const status = el('div', '', 'status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); status.hidden = true;
     const notice = el('div', '', 'notice'); notice.setAttribute('role', 'alert'); notice.hidden = true;
     const warningButton = el('button', '', 'warning-button'); warningButton.hidden = true;
-    warningButton.onclick = () => { notice.hidden = !notice.hidden; };
+    notice.id = 'ce-notice'; warningButton.setAttribute('aria-controls', notice.id);
+    let warningsOpen = false;
+    warningButton.onclick = () => { warningsOpen = !warningsOpen; render(state); };
     const list = el('div', '', 'list'); list.setAttribute('aria-label', 'Select messages');
     const empty = el('div', 'No messages on this page yet.', 'empty');
     const pageControls = el('div', '', 'page'), prev = el('button', 'Previous'), pageLabel = el('span'), next = el('button', 'Next'); pageControls.append(prev, pageLabel, next); pageControls.hidden = true;
@@ -39,7 +41,7 @@
     cancel.hidden = true; format.setAttribute('aria-label', 'Export format');
     for (const [value, label] of [['md', 'Markdown'], ['json', 'JSON'], ['html', 'HTML / PDF'], ['txt', 'Text'], ['csv', 'CSV']]) { const option = el('option', label); option.value = value; format.append(option); }
     bottom.append(format, load, cancel, copyButton, exportButton); panel.append(head, body, bottom); container.append(style, panel);
-    let state = { messages: [] }, picked = new Set(), mode = 'all', token = null, revision = null, page = 0, disposed = false, pollBusy = false, settingsReady = false, actionBusy = false, feedback = '', feedbackTimer = null;
+    let state = { messages: [] }, picked = new Set(), mode = 'all', token = null, revision = null, page = 0, disposed = false, pollBusy = false, settingsReady = false, actionBusy = false, feedback = '', feedbackTimer = null, actionError = '', exportWarnings = [];
     const filterButtons = [];
     function selectByMode() {
       if (mode === 'all') picked = new Set(state.messages.map(m => m.id));
@@ -50,7 +52,7 @@
     function selectionText() {
       selection.textContent = `${picked.size} / ${state.messages.length}`;
       selection.title = `${picked.size} of ${state.messages.length} messages selected`;
-      copyButton.disabled = exportButton.disabled = !picked.size || state.running || state.downloading || state.generating || state.pageBusy || actionBusy;
+      copyButton.disabled = exportButton.disabled = !picked.size || state.running || state.downloading || actionBusy;
       const active = !picked.size ? 'None' : mode === 'all' ? 'All' : mode === 'user' ? 'Human' : mode === 'assistant' ? 'Assistant' : null;
       filterButtons.forEach(b => b.setAttribute('aria-pressed', String(b.textContent === active)));
     }
@@ -79,6 +81,7 @@
     settingsButton.onclick = () => showSettings(settingsView.hidden); back.onclick = () => showSettings(false);
     function render(value) {
       state = { messages: [], ...value };
+      if (state.token !== token) { token = state.token; mode = 'all'; picked.clear(); page = 0; revision = null; warningsOpen = false; actionError = ''; exportWarnings = []; }
       panel.dataset.provider = state.providerID || '';
       badge.textContent = state.provider || ''; badge.hidden = !state.provider;
       if (!settingsReady && state.settings) {
@@ -88,20 +91,23 @@
       const busy = state.running || state.downloading || state.generating || state.pageBusy;
       status.hidden = !busy && !feedback;
       status.textContent = feedback || (state.generating && !state.running ? 'Response is still generating' : state.pageBusy && !state.running ? 'Waiting for the page' : `${state.phase || 'Loading'}${state.percent === undefined ? '' : ` · ${state.percent}%`}`);
-      const warnings = state.warnings || [];
-      warningButton.hidden = !warnings.length; warningButton.textContent = `${warnings.length === 1 ? 'Capture warning' : warnings.length + ' capture warnings'}`;
-      notice.textContent = state.error || warnings.join('\n'); if (state.error) notice.hidden = false; else if (!warnings.length) notice.hidden = true;
+      const warnings = [...new Set([...(state.warnings || []), ...exportWarnings])];
+      const error = actionError || state.error;
+      warningButton.hidden = !warnings.length; warningButton.textContent = warnings.length === 1 ? '1 warning' : `${warnings.length} warnings`;
+      warningButton.setAttribute('aria-expanded', String(warningsOpen));
+      const noticeText = [error, ...(warningsOpen ? warnings : [])].filter(Boolean).join('\n');
+      if (notice.textContent !== noticeText) notice.textContent = noticeText;
+      notice.hidden = !noticeText;
       load.hidden = !!state.running; cancel.hidden = !state.running;
       load.disabled = state.downloading || !state.provider || actionBusy; refresh.disabled = state.running || state.downloading;
       load.textContent = ['observed-edges', 'reported-total'].includes(state.coverage) ? 'Check again' : 'Load all';
-      if (state.token !== token) { token = state.token; mode = 'all'; picked.clear(); page = 0; revision = null; }
       const incoming = state.revision ?? state.messages.map(m => m.id + m.preview).join('|');
       if (incoming !== revision) { revision = incoming; selectByMode(); drawList(); }
       else selectionText();
     }
     async function poll() {
       if (disposed || pollBusy) return; pollBusy = true;
-      try { render(await bridge({ type: 'ce:state' })); } catch (error) { notice.textContent = error.message; notice.hidden = false; exportButton.disabled = true; }
+      try { render(await bridge({ type: 'ce:state' })); } catch (error) { notice.textContent = error.message; notice.hidden = false; copyButton.disabled = exportButton.disabled = true; }
       finally { pollBusy = false; }
     }
     let settingsChain = Promise.resolve();
@@ -109,26 +115,34 @@
       const value = { format: format.value };
       for (const [key, input] of Object.entries(fields)) value[key] = input.type === 'checkbox' ? input.checked : Number(input.value);
       settingsChain = settingsChain.catch(() => {}).then(() => bridge({ type: 'ce:settings', settings: value }));
-      settingsChain.catch(error => { notice.textContent = error.message; notice.hidden = false; }); return settingsChain;
+      settingsChain.catch(() => { actionError = 'Export settings could not be saved.'; render(state); }); return settingsChain;
     }
     for (const input of Object.values(fields)) input.onchange = saveSettings; format.onchange = saveSettings;
     async function action(message) {
-      feedback = ''; clearTimeout(feedbackTimer);
+      if (message.type === 'ce:cancel') {
+        try { render(await bridge(message)); }
+        catch (error) { actionError = error.message; render(state); }
+        return;
+      }
+      feedback = ''; actionError = ''; exportWarnings = []; clearTimeout(feedbackTimer);
       actionBusy = true; render(state);
       try {
-        if (message.type !== 'ce:cancel') await saveSettings();
+        await settingsChain.catch(() => {});
         const result = await bridge(message); if (result?.error) throw new Error(result.error);
-        if (message.type === 'ce:copy') {
+        if (result?.cancelled) feedback = 'Cancelled';
+        else if (message.type === 'ce:copy') {
           if (typeof result?.copyText !== 'string') throw new Error('Could not prepare the conversation for copying.');
           await navigator.clipboard.writeText(result.copyText);
+          feedback = 'Copied to clipboard';
+        } else if (message.type === 'ce:export') {
+          feedback = 'Download started';
         }
-        await poll();
-        if (message.type === 'ce:copy') {
-          feedback = 'Copied to clipboard'; render(state);
-          feedbackTimer = setTimeout(() => { feedback = ''; if (!disposed) render(state); }, 2500);
-        }
+        exportWarnings = result?.exportWarnings || [];
+        if (result?.messages) { const { copyText, ...snapshot } = result; render(snapshot); }
+        else await poll();
+        if (feedback) feedbackTimer = setTimeout(() => { feedback = ''; if (!disposed) render(state); }, 3000);
       }
-      catch (error) { state.error = error.message; notice.textContent = error.message; notice.hidden = false; }
+      catch (error) { actionError = error.message; }
       finally { actionBusy = false; render(state); }
     }
     load.onclick = () => action({ type: 'ce:start', token }); cancel.onclick = () => action({ type: 'ce:cancel' }); refresh.onclick = () => action({ type: 'ce:refresh' });

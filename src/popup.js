@@ -11,7 +11,7 @@
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/common.js', 'src/design.js', 'src/markdown.js', 'src/adapters.js', 'src/collector.js', 'src/formats.js', 'src/ui.js', 'src/content.js'] });
       initial = await chrome.tabs.sendMessage(tab.id, { type: 'ce:state' });
     }
-    if (!initial?.provider) throw new Error('Open a supported chatbot conversation.');
+    if (!initial?.provider) throw new Error(initial?.error || 'Open a supported chatbot conversation.');
     const bridge = async message => {
       if (message.type === 'ce:state' && initial) { const result = initial; initial = null; return result; }
       const result = await chrome.tabs.sendMessage(tab.id, message);

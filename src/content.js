@@ -3,19 +3,20 @@
   const E = globalThis.ChatExport;
   if (E.contentInstalled) return;
   E.contentInstalled = true;
-  let settings = E.settings(), archive = null, store = new E.MessageStore(), controller = null, route = location.href, token = 0, dirty = true, verifiedRevision = -1, observer, observerRoot, observerScope, operation = 0;
+  let settings = E.settings(), archive = null, store = new E.MessageStore(), controller = null, route = location.href, token = 0, dirty = true, checkedRevision = -1, observer, observerRoot, observerScope, operation = 0;
   let state = { phase: 'Ready', running: false, downloading: false, count: 0 }, buttonHost, panelHost, panel;
   const provider = () => E.provider(location.href);
-  const settingsReady = chrome.storage.local.get('settings').then(result => { settings = E.settings(result.settings); updateButton(); });
+  const settingsReady = chrome.storage.local.get('settings').catch(() => ({})).then(result => { settings = E.settings(result.settings); updateButton(); });
   function routeCheck() {
     if (location.href === route) return;
-    route = location.href; operation++; controller?.abort(); controller = null; archive = null; store = new E.MessageStore(); verifiedRevision = -1; token++; dirty = true; observer?.disconnect(); observerRoot = observerScope = null;
+    route = location.href; operation++; controller?.abort(); controller = null; archive = null; store = new E.MessageStore(); checkedRevision = -1; token++; dirty = true; observer?.disconnect(); observerRoot = observerScope = null;
     closePanel(); updateButton(); state = { phase: 'Ready', running: false, downloading: false, count: 0 };
   }
   function watch() {
     const p = provider(); if (!p) return;
     if (observerRoot?.isConnected) return;
-    const scope = E.scroller(document, p, E.read(document, p, settings));
+    const node = document.querySelector(p.selector) || (p.fallback && document.querySelector(p.fallback));
+    const scope = E.scroller(document, p, node ? [{ node }] : []);
     observerScope = scope;
     const root = scope === document.scrollingElement ? document.body : scope;
     if (observerRoot === root) return;
@@ -35,13 +36,12 @@
     const p = provider(); if (!p) return;
     const previous = archive;
     const fresh = E.loadedArchive({ provider: p, settings, store, retain: previous?.capture.strategy === 'virtual-scan' });
-    if (observerScope && E.transcriptBusy(document, observerScope)) verifiedRevision = -1;
-    if (verifiedRevision === store.revision && previous) fresh.capture = previous.capture;
-    else {
-      verifiedRevision = fresh.capture.status === 'reported-total' ? store.revision : -1;
-      if (previous?.capture.status === 'partial' && verifiedRevision === -1) fresh.capture = { ...previous.capture, expectedTotal: fresh.capture.expectedTotal || previous.capture.expectedTotal };
-    }
-    archive = fresh; dirty = false; state.count = archive.messages.length; state.error = null; state.phase = state.count ? 'Ready' : 'No messages yet';
+    const busy = observerScope && E.transcriptBusy(document, observerScope);
+    if (busy && previous?.capture.status !== 'partial') checkedRevision = -1;
+    if (checkedRevision === store.revision && previous && !fresh.capture.warnings.some(w => !previous.capture.warnings.includes(w))) fresh.capture = previous.capture;
+    else checkedRevision = fresh.capture.status === 'reported-total' ? store.revision : -1;
+    archive = fresh; dirty = false; state.count = archive.messages.length;
+    if (!['Cancelled', 'Stopped'].includes(state.phase)) state.phase = state.count ? 'Ready' : 'No messages yet';
     watch();
   }
   function snapshot() {
@@ -73,14 +73,15 @@
   }
   async function verify() {
     refreshLoaded();
-    if (archive && verifiedRevision === store.revision && !(observerScope && E.transcriptBusy(document, observerScope))) return archive;
+    if (archive && checkedRevision === store.revision && ['observed-edges', 'reported-total'].includes(archive.capture.status) && !(observerScope && E.transcriptBusy(document, observerScope))) return archive;
     const p = provider(); if (!p) throw new Error('Open a supported chatbot conversation.');
-    const generation = operation, abort = new AbortController(); controller = abort;
+    const generation = operation, captureStore = store, abort = new AbortController(); controller = abort;
     state.running = true; state.phase = 'Checking history'; state.error = null;
     try {
-      const result = await E.capture({ provider: p, settings: { ...settings }, store, signal: abort.signal, progress: progress => { if (operation === generation) Object.assign(state, progress); } });
+      const result = await E.capture({ provider: p, settings: { ...settings, scan: true }, store: captureStore, signal: abort.signal, progress: progress => { if (operation === generation) Object.assign(state, progress); } });
       if (generation !== operation || result.sourceURL !== location.href) throw new Error('Conversation changed.');
-      archive = result; verifiedRevision = result.capture.status === 'observed-edges' || result.capture.status === 'reported-total' ? store.revision : -1;
+      if (captureStore !== store) return null;
+      archive = result; checkedRevision = store.revision;
       state.count = result.messages.length; state.phase = abort.signal.aborted ? 'Cancelled' : 'Ready'; dirty = true; delete state.percent;
       return abort.signal.aborted ? null : result;
     } finally { if (operation === generation) { state.running = false; controller = null; } }
@@ -91,21 +92,25 @@
     if (!archive?.messages.length || archive.sourceURL !== location.href) throw new Error('No messages available yet.');
     const initialIDs = new Set(ids || []);
     const mode = selection || (initialIDs.size === archive.messages.length ? 'all' : 'custom');
-    if (settings.scan && ['all', 'user', 'assistant'].includes(mode)) {
-      const result = await verify(); if (!result) return;
-      if (result.capture.status === 'partial') { state.error = 'History is incomplete. Review the capture warning before exporting.'; return; }
+    if (settings.scan && !E.generating(document) && ['all', 'user', 'assistant'].includes(mode)) {
+      const result = await verify(); if (!result) return { cancelled: true };
     }
-    if (E.generating(document)) throw new Error('Wait for the response to finish.');
+    if (archive?.sourceURL !== location.href) throw new Error('Conversation changed. Refresh the selection.');
     const chosen = mode === 'all' ? archive.messages.map(m => m.id) : mode === 'user' || mode === 'assistant' ? archive.messages.filter(m => m.role === mode).map(m => m.id) : [...initialIDs];
     const selected = E.selectArchive(archive, chosen);
     if (!selected.messages.length) throw new Error('Select at least one available message.');
-    const generation = operation;
+    if (E.generating(document)) {
+      selected.capture = { ...selected.capture, status: 'partial', warnings: [...new Set([...selected.capture.warnings, 'The last response is still generating.'])] };
+    }
+    const generation = operation, downloadImages = settings.downloadImages;
     state.downloading = true; state.phase = copy ? 'Preparing copy' : 'Preparing download'; state.error = null;
     try {
-      const output = E.format(selected, format);
-      if (copy) { state.phase = 'Copy ready'; return { copyText: output.content }; }
-      await download(new Blob([output.content], { type: output.mime }), output.filename);
-      if (settings.downloadImages) {
+      const output = E.formatAvailable(selected, format);
+      const warnings = [...output.warnings];
+      if (copy) { state.phase = 'Copy ready'; return { copyText: output.content, exportWarnings: warnings }; }
+      try { await download(new Blob([output.content], { type: output.mime }), output.filename); }
+      catch (error) { throw new Error(`Download could not start. ${error.message} You can still copy the selected messages.`); }
+      if (downloadImages) {
         const images = E.unique(selected.messages.flatMap(m => m.images), i => i.url), manifest = [];
         for (const [i, image] of images.entries()) {
           if (operation !== generation || location.href !== selected.sourceURL) { manifest.push({ ...image, status: 'skipped', reason: 'Conversation changed' }); continue; }
@@ -116,11 +121,17 @@
             const result = image.url.startsWith('blob:') ? await download(await (await fetch(image.url)).blob(), filename, false) : await chrome.runtime.sendMessage({ type: 'ce:download', media: true, url: image.url, filename, saveAs: false });
             manifest.push({ ...image, filename, status: result?.ok ? 'queued' : 'failed', downloadId: result?.id, reason: result?.error });
           } catch (error) { manifest.push({ ...image, filename, status: 'failed', reason: error.message }); }
-          state.phase = `Images ${i + 1}/${Math.min(100, images.length)}`;
+          if (operation === generation) state.phase = `Images ${i + 1}/${Math.min(100, images.length)}`;
         }
-        if (images.length && generation === operation) await download(new Blob([JSON.stringify({ sourceURL: selected.sourceURL, note: 'Queued means handed to the browser. Check Downloads for completion. URLs may expire; filenames can be uniquified.', images: manifest }, null, 2)], { type: 'application/json' }), output.filename.replace(/\.[^.]+$/, '.media.json'), false);
+        if (manifest.some(image => image.status !== 'queued')) warnings.push('Some images were skipped or could not be downloaded.');
+        if (images.length && generation === operation) {
+          try {
+            await download(new Blob([JSON.stringify({ sourceURL: selected.sourceURL, note: 'Queued means handed to the browser. Check Downloads for completion. URLs may expire; filenames can be uniquified.', images: manifest }, null, 2)], { type: 'application/json' }), output.filename.replace(/\.[^.]+$/, '.media.json'), false);
+          } catch { warnings.push('The image download report could not be saved.'); }
+        }
       }
-      state.phase = 'Download started';
+      if (operation === generation) state.phase = 'Download started';
+      return { exportWarnings: warnings };
     } finally { if (operation === generation) state.downloading = false; }
   }
   async function handle(message) {
@@ -128,15 +139,14 @@
     if (message.type === 'ce:state') return snapshot();
     if (message.type === 'ce:settings') {
       const next = E.settings(message.settings);
-      if (next.includeThoughts !== settings.includeThoughts) { dirty = true; verifiedRevision = -1; }
-      settings = next; await chrome.storage.local.set({ settings }); updateButton(); return snapshot();
+      applySettings(next); await chrome.storage.local.set({ settings }); return snapshot();
     }
     if (message.type === 'ce:cancel') { controller?.abort(); return snapshot(); }
-    if (message.type === 'ce:refresh') { dirty = true; return snapshot(); }
+    if (message.type === 'ce:refresh') { dirty = true; checkedRevision = -1; state.error = null; return snapshot(); }
     if (message.type === 'ce:start') {
       if (state.running || state.downloading) throw new Error('An operation is already running.');
       if (message.token !== undefined && message.token !== token) throw new Error('Conversation changed. Refresh the selection.');
-      verifiedRevision = -1;
+      checkedRevision = -1;
       const generation = operation;
       verify().catch(error => { if (generation === operation) { state.error = error.message; state.phase = 'Stopped'; } }); return snapshot();
     }
@@ -151,8 +161,15 @@
     if (!message?.type?.startsWith('ce:') || message.type === 'ce:download') return;
     handle(message).then(reply, error => { state.error = error.message; reply({ error: error.message }); }); return true;
   });
+  function applySettings(next) {
+    if (next.includeThoughts !== settings.includeThoughts) {
+      // Retained, unmounted messages were converted with the previous setting.
+      controller?.abort(); archive = null; token++; store = new E.MessageStore(); checkedRevision = -1; dirty = true;
+    }
+    settings = next; updateButton();
+  }
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.settings) { const next = E.settings(changes.settings.newValue); if (next.includeThoughts !== settings.includeThoughts) { dirty = true; verifiedRevision = -1; } settings = next; updateButton(); }
+    if (area === 'local' && changes.settings) applySettings(E.settings(changes.settings.newValue));
   });
   setInterval(routeCheck, 400);
 })(globalThis);

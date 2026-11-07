@@ -120,6 +120,19 @@ test('native Chrome toolbar popup: immediate selection, large list, one-click hi
     await exportPromise;
     assert.equal((await worker.evaluate(() => chrome.downloads.search({}))).length, 3, 'Cancelling verification starts no download');
     await source.evaluate(() => document.getElementById('chat-history').setAttribute('aria-busy', 'false'));
+    await source.evaluate(() => document.querySelector('model-response-content').append(document.createElement('canvas')));
+    for (let i = 0; i < 30 && await popup.evaluate('document.querySelector(".warning-button").hidden'); i++) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.equal(await popup.evaluate('document.querySelector(".warning-button").hidden'), false);
+    await popup.evaluate('document.querySelector(".warning-button").click()');
+    for (let i = 0; i < 30 && !await popup.evaluate('document.querySelector(".notice").textContent.includes("fully converted")'); i++) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.match(await popup.evaluate('document.querySelector(".notice").textContent'), /could not be fully converted/);
+    assert.equal(await popup.evaluate('document.querySelector(".primary").disabled'), false, 'A capture warning leaves Export enabled');
+    const warningShot = await popup.send('Page.captureScreenshot', { format: 'png' });
+    fs.writeFileSync(path.join(work, 'toolbar-warning.png'), Buffer.from(warningShot.data, 'base64'));
     console.log('Native toolbar metrics:', JSON.stringify(metrics), 'artifacts:', work);
   } finally { await context.close(); }
 });

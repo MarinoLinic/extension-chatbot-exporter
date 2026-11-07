@@ -2,17 +2,20 @@
   'use strict';
   const E = root.ChatExport = root.ChatExport || {};
   E.defaults = { pageButton: true, format: 'md', scan: true, waitMs: 650, maxSeconds: 180, includeThoughts: false, downloadImages: false, saveAs: true };
-  E.settings = (value = {}) => ({
-    ...E.defaults,
-    pageButton: value.pageButton !== false,
-    format: ['md', 'json', 'html', 'txt', 'csv'].includes(value.format) ? value.format : 'md',
-    scan: value.scan !== false,
-    waitMs: Math.min(3000, Math.max(300, Number(value.waitMs) || 650)),
-    maxSeconds: Math.min(900, Math.max(15, Number(value.maxSeconds) || 180)),
-    includeThoughts: value.includeThoughts === true,
-    downloadImages: value.downloadImages === true,
-    saveAs: value.saveAs !== false
-  });
+  E.settings = value => {
+    value ||= {};
+    return {
+      ...E.defaults,
+      pageButton: value.pageButton !== false,
+      format: ['md', 'json', 'html', 'txt', 'csv'].includes(value.format) ? value.format : 'md',
+      scan: value.scan !== false,
+      waitMs: Math.min(3000, Math.max(300, Number(value.waitMs) || 650)),
+      maxSeconds: Math.min(900, Math.max(15, Number(value.maxSeconds) || 180)),
+      includeThoughts: value.includeThoughts === true,
+      downloadImages: value.downloadImages === true,
+      saveAs: value.saveAs !== false
+    };
+  };
   E.url = (raw, base, media = false) => {
     if (!raw || typeof raw !== 'string' || !raw.trim()) return '';
     try {
@@ -25,7 +28,16 @@
   E.mdURL = value => String(value).replace(/[<>\s()\\]/g, c => encodeURIComponent(c));
   E.filename = value => {
     let name = String(value).normalize('NFC').replace(/[\x00-\x1f\x7f]/g, '').replace(/[/\\|:•]+/g, ' - ').replace(/[<>"?*]/g, '').replace(/\s*-\s*(?:-\s*)+/g, ' - ').replace(/\s+/g, ' ').replace(/^[ .-]+|[ .-]+$/g, '');
-    if (name.length > 90) { name = name.slice(0, 90); if (/\s/.test(name.slice(-15))) name = name.replace(/\s+\S*$/, ''); }
+    const encoder = new TextEncoder();
+    if (name.length > 90 || encoder.encode(name).length > 175) {
+      let prefix = '', bytes = 0;
+      for (const character of name) {
+        bytes += encoder.encode(character).length;
+        if (bytes > 175 || prefix.length + character.length > 90) break;
+        prefix += character;
+      }
+      name = /\s/.test(prefix.slice(-15)) ? prefix.replace(/\s+\S*$/, '') : prefix;
+    }
     name = name.replace(/[ .-]+$/g, '');
     return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) ? 'Conversation - ' + name : name || 'Conversation';
   };
@@ -48,9 +60,10 @@
     return found ? E.mapMarkdownLines(value, line => line.replace(/^( {0,3})(#{1,6})(\s)/, (_, indent, level, space) => indent + '#'.repeat(Math.min(6, level.length + 3 - minimum)) + space)) : value;
   };
   E.nestHTMLHeadings = value => {
-    const levels = [...value.matchAll(/<h([1-6])>/g)].map(match => Number(match[1]));
-    if (!levels.length) return value;
-    const offset = 3 - Math.min(...levels);
+    let minimum = 7;
+    for (const match of value.matchAll(/<h([1-6])>/g)) minimum = Math.min(minimum, Number(match[1]));
+    if (minimum === 7) return value;
+    const offset = 3 - minimum;
     return value.replace(/<(\/?)h([1-6])>/g, (_, close, level) => '<' + close + 'h' + Math.min(6, Number(level) + offset) + '>');
   };
   E.plainMarkdown = value => E.mapMarkdownLines(value, line => line.replace(/^ {0,3}#{1,6}\s/, '').split(/(`+[^`]*`+|\$[^$\n]+\$)/g).map((part, index) => index % 2 ? part : part.replace(/(?<!\\)\*\*([^*]+)(?<!\\)\*\*/g, '$1').replace(/(?<![\\*])\*([^*\n]+)(?<!\\)\*(?!\*)/g, '$1').replace(/\\([\\`*_[\]<>#>.()|])/g, '$1')).join(''));

@@ -21,7 +21,7 @@ test('real MV3 extension: content script, popup messaging, selected transcript d
     const url = 'https://gemini.google.com/app/extension-test';
     const imageURL = `http://127.0.0.1:${imageServer.address().port}/sketch.png`;
     await context.route('**/*', async route => {
-      if (route.request().url() === url) await route.fulfill({ contentType: 'text/html', body: `<title>Test conversation</title><div class="conversation-container" id="turn"><user-query><div class="query-text">Export only my question.</div></user-query><model-response><model-response-content><p>Answer with a <a href="https://example.test/source">source</a>.</p><button><img src="${imageURL}" alt="Sketch"></button></model-response-content></model-response></div>` });
+      if (route.request().url() === url) await route.fulfill({ contentType: 'text/html', body: `<title>Testing... exports</title><div class="conversation-container" id="turn"><user-query><div class="query-text">Export only my question.</div></user-query><model-response><model-response-content><p>Answer with a <a href="https://example.test/source">source</a>.</p><button><img src="${imageURL}" alt="Sketch"></button></model-response-content></model-response></div>` });
       else if (route.request().url() === imageURL) await route.continue();
       else if (route.request().url().startsWith('chrome-extension:')) await route.continue();
       else await route.abort();
@@ -44,6 +44,7 @@ test('real MV3 extension: content script, popup messaging, selected transcript d
     }
     assert.equal(saved?.state, 'complete', JSON.stringify(saved) || 'No browser download recorded');
     const exported = JSON.parse(fs.readFileSync(saved.filename, 'utf8'));
+    assert.equal(exported.title, 'Testing... exports');
     assert.equal(exported.messages.length, 1); assert.equal(exported.messages[0].role, 'user'); assert.equal(exported.messages[0].markdown, 'Export only my question.');
     assert.equal(exported.capture.status, 'visible-only');
     // Popup page runs with real extension CSP and real runtime messaging.
@@ -70,6 +71,39 @@ test('real MV3 extension: content script, popup messaging, selected transcript d
     assert.ok(image); assert.equal(fs.readFileSync(image.filename).subarray(1, 4).toString(), 'PNG');
     const media = downloads.filter(d => d.url.startsWith('blob:')).map(d => { try { return JSON.parse(fs.readFileSync(d.filename, 'utf8')); } catch { return null; } }).find(value => value?.images);
     assert.equal(media.images.length, 1); assert.equal(media.images[0].status, 'queued');
+    await page.evaluate(() => {
+      const canvas = document.createElement('canvas');
+      canvas.setAttribute('aria-label', 'Unfamiliar chart');
+      document.querySelector('model-response-content').append(canvas);
+    });
+    await send({ type: 'ce:settings', settings: { scan: true, saveAs: false, pageButton: true } });
+    state = await send({ type: 'ce:state' });
+    assert.equal(state.coverage, 'partial');
+    const partial = await send({ type: 'ce:export', selection: 'all', token: state.token, format: 'json' });
+    assert.ok(!partial.error, partial.error);
+    assert.ok(partial.exportWarnings.length > 0);
+    for (let i = 0; i < 40; i++) {
+      downloads = await worker.evaluate(async () => chrome.downloads.search({}));
+      if (downloads.length === 5 && downloads.every(d => d.state === 'complete')) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    assert.equal(downloads.length, 5, 'A partial full-history check still starts a transcript download');
+    const newest = downloads.sort((a, b) => b.id - a.id)[0];
+    assert.equal(newest.state, 'complete');
+    const partialArchive = JSON.parse(fs.readFileSync(newest.filename, 'utf8'));
+    assert.equal(partialArchive.capture.status, 'partial');
+    assert.match(partialArchive.capture.warnings.join(' '), /fully converted/);
+    assert.equal(partialArchive.messages.length, 2);
+    assert.match(partialArchive.messages[1].markdown, /Unfamiliar chart \(no accessible URL\)/);
+    await page.evaluate(() => {
+      const stop = document.createElement('button');
+      stop.setAttribute('data-testid', 'stop-button');
+      stop.textContent = 'Stop';
+      document.body.append(stop);
+    });
+    const copy = await send({ type: 'ce:copy', selection: 'all', token: state.token, format: 'json' });
+    assert.ok(!copy.error, copy.error);
+    assert.match(JSON.parse(copy.copyText).capture.warnings.join(' '), /still generating/);
     await page.screenshot({ path: path.join(work, 'page.png') });
     console.log('Real extension QA artifacts: ' + work);
   } finally { await context.close(); await new Promise(resolve => imageServer.close(resolve)); }

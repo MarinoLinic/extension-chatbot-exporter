@@ -15,7 +15,7 @@
   E.providers = providers;
   E.provider = href => { try { const u = new URL(href); return providers.find(p => p.hosts.includes(u.hostname) && (!p.path || p.path.test(u.pathname))) || null; } catch { return null; } };
   const keys = ['data-message-id', 'data-chatgpt-selection-message-id', 'data-chatgpt-search-message-ids', 'data-plane-row', 'data-virtual-list-item-key', 'data-turn-id', 'data-chatgpt-search-unit-key', 'data-content-search-unit-key', 'data-quotable-message', 'data-index'];
-  const keySelector = keys.map(k => `[${k}]`).join(',');
+  const keySelectors = keys.map(attr => [attr, `[${attr}]:not([${attr}=""])`]);
   const text = el => el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
   E.read = function (doc, provider, settings = E.defaults) {
     let nodes = [...doc.querySelectorAll(provider.selector)];
@@ -49,7 +49,6 @@
           break;
         case 'grok':
           role = node.getAttribute('data-testid') === 'user-message' ? 'user' : 'assistant';
-          body = node.querySelector('.response-content-markdown') || node;
           row = node.closest('[data-plane-row]') || node;
           break;
         case 'xgrok':
@@ -81,23 +80,26 @@
       }));
       attachments = E.unique(attachments, a => a.name + '|' + a.url);
       const extraImages = [...resourceRoot.querySelectorAll('img')].filter(el => !body.contains(el)).flatMap(el => E.convert(el, { base: doc.URL }).images);
-      const toolNotes = [...resourceRoot.querySelectorAll('[data-testid="tool-status-pill"],.tool-call,.tool-result')].map(text).filter(Boolean);
-      const keyNode = node.closest(keySelector) || row.closest(keySelector);
+      const toolNotes = [...resourceRoot.querySelectorAll('[data-testid="tool-status-pill"],.tool-call,.tool-result,.model-error')].map(text).filter(Boolean);
       let stableID = null, index = null;
-      if (keyNode) {
-        const attr = keys.find(k => keyNode.hasAttribute(k));
-        stableID = attr + ':' + keyNode.getAttribute(attr);
-        if (attr === 'data-index' || attr === 'data-virtual-list-item-key') index = Number(keyNode.getAttribute(attr));
+      // The closest ChatGPT search key can repeat across different prompts.
+      // Prefer the message ID carried by the enclosing search unit.
+      for (const [attr, selector] of keySelectors) {
+        const value = (node.closest(selector) || row.closest(selector))?.getAttribute(attr)?.trim();
+        if (!value) continue;
+        stableID = attr + ':' + value;
+        if (attr === 'data-index' || attr === 'data-virtual-list-item-key') index = Number(value);
+        break;
       }
       if (!stableID && row.id) stableID = 'id:' + row.id;
       const indexed = row.querySelector('[aria-label^="Message "]')?.getAttribute('aria-label')?.match(/^Message (\d+) of (\d+)/);
       const expectedTotal = indexed ? Number(indexed[2]) : null;
       return {
         node, row, stableID: stableID ? stableID + ':' + role : null, index, expectedTotal,
-        role, markdown: converted.markdown, html: converted.html,
+        role, markdown: converted.markdown, html: converted.html, degraded: converted.degraded,
         links: E.unique(links, l => l.url), images: E.unique([...converted.images, ...extraImages], i => i.url),
         attachments, artifacts: converted.artifacts, toolNotes,
-        placeholder: !converted.markdown && !converted.images.length && !attachments.length && !converted.artifacts.length
+        placeholder: !converted.markdown && !converted.images.length && !extraImages.length && !attachments.length && !converted.artifacts.length && !links.length && !toolNotes.length
       };
     });
   };

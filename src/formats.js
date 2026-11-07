@@ -39,4 +39,18 @@
     }
     return { content, mime: mime + ';charset=utf-8', filename: `${E.exportDate(archive.exportedAt)} - ${E.filename(archive.provider.name)} - ${E.filename(archive.title)}.${type}` };
   };
+  E.formatAvailable = (archive, type) => {
+    const warnings = [...archive.capture.warnings];
+    try { return { ...E.format(archive, type), warnings }; }
+    catch {
+      warnings.push('The selected format could not be created. Available messages were exported as text.');
+      const messages = archive.messages.map((m, i) => [`${i + 1}. ${m.role}`, m.markdown, ...m.attachments.map(a => [a.name, a.url].filter(Boolean).join(' ')), ...m.links.map(l => l.url), ...m.images.map(image => image.url), ...m.toolNotes].filter(Boolean).join('\n'));
+      return {
+        content: [archive.title, archive.sourceURL, archive.capture.note, ...warnings, ...messages].join('\n\n') + '\n',
+        mime: 'text/plain;charset=utf-8',
+        filename: `${E.exportDate(archive.exportedAt)} - ${E.filename(archive.provider.name)} - ${E.filename(archive.title)}.txt`,
+        warnings
+      };
+    }
+  };
 })(globalThis);
