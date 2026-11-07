@@ -16,8 +16,8 @@ const mapping = {
   'gemini-sample-6.html': ['https://gemini.google.com/app/test', 8],
   'gemini-sample-7.html': ['https://gemini.google.com/app/test', 2],
   'gemini-sample-8.html': ['https://gemini.google.com/app/test', 4],
-  '2026-11-07/chatgpt---1.html': ['https://chatgpt.com/c/test', 12, { users: 6, tables: 5 }],
-  '2026-11-07/chatgpt---1.2.html': ['https://chatgpt.com/c/test', 12, { users: 6, tables: 6 }],
+  '2026-11-07/chatgpt---1.html': ['https://chatgpt.com/c/test', 12, { users: 6, tables: 5, charts: 3, images: 3 }],
+  '2026-11-07/chatgpt---1.2.html': ['https://chatgpt.com/c/test', 12, { users: 6, tables: 6, charts: 2, images: 2 }],
   '2026-11-07/chatgpt---2.html': ['https://chatgpt.com/c/test', 16, { users: 11, placeholders: 6, code: 2 }],
   '2026-11-07/gemini---1.html': ['https://gemini.google.com/app/test', 12, { users: 6, tables: 5, code: 6 }],
   '2026-11-07/gemini---2.html': ['https://gemini.google.com/app/test', 8, { users: 4, images: 2, attachments: 2 }],
@@ -43,6 +43,7 @@ const mapping = {
           attachments: populated.reduce((n, m) => n + m.attachments.length, 0), artifacts: populated.reduce((n, m) => n + m.artifacts.length, 0),
           math: populated.reduce((n, m) => n + (m.html.match(/class="math"/g) || []).length, 0), tables: populated.reduce((n, m) => n + (m.html.match(/<table>/g) || []).length, 0),
           code: populated.reduce((n, m) => n + (m.html.match(/<pre>/g) || []).length, 0), emptyRoles: rows.some(m => !m.role),
+          charts: populated.reduce((n, m) => n + m.images.filter(image => image.kind === 'chart').length, 0),
           unsafe: populated.some(m => /<script|<iframe|<img|onerror=|javascript:/i.test(m.html)),
           exports: formats.filter(format => ChatExport.formatAvailable(archive, format).filename.endsWith('.' + format)).length,
           status: archive.capture.status

@@ -14,6 +14,59 @@
     return heading ? escaped : escaped.replace(/(^|\n)([ \t]*)([#>])/g, '$1$2\\$3').replace(/(^|\n)([ \t]*)(\d+)([.)])(?=[ \t])/g, '$1$2$3\\$4');
   };
   const mark = (s, marker) => s.trim() ? s.replace(/^(\s*)([\s\S]*?)(\s*)$/, (_, a, b, c) => a + marker + b + marker + c) : s;
+  const svgTags = new Set('svg g path rect circle ellipse line polyline polygon text tspan title desc defs linearGradient radialGradient stop clipPath'.split(' '));
+  const svgAttributes = new Set('viewBox preserveAspectRatio width height x y x1 x2 y1 y2 cx cy r rx ry d points transform fill fill-rule fill-opacity stroke stroke-width stroke-opacity stroke-linecap stroke-linejoin stroke-miterlimit stroke-dasharray stroke-dashoffset opacity color font-family font-size font-weight font-style text-anchor dominant-baseline dx dy textLength lengthAdjust id clip-path clipPathUnits gradientUnits gradientTransform spreadMethod offset stop-color stop-opacity'.split(' '));
+  const svgStyles = new Set('color fill fill-opacity fill-rule stroke stroke-width stroke-opacity stroke-linecap stroke-linejoin stroke-dasharray stroke-dashoffset opacity font-family font-size font-weight font-style text-anchor dominant-baseline'.split(' '));
+  function svgImage(raw) {
+    if (raw.length > 1500000) throw new Error('Chart exceeds conversion limit.');
+    let source = raw;
+    if (/^data:/i.test(raw)) {
+      const comma = raw.indexOf(','), metadata = raw.slice(0, comma);
+      const payload = decodeURIComponent(raw.slice(comma + 1));
+      source = /;base64$/i.test(metadata) ? new TextDecoder().decode(Uint8Array.from(atob(payload), c => c.charCodeAt(0))) : payload;
+    }
+    if (/<!DOCTYPE|<!ENTITY/i.test(source)) throw new Error('Unsupported chart document.');
+    const parsed = new DOMParser().parseFromString(source, 'image/svg+xml');
+    if (parsed.querySelector('parsererror') || parsed.documentElement.localName !== 'svg' || parsed.querySelectorAll('*').length > 5000) throw new Error('Unsupported chart document.');
+    const clean = document.implementation.createDocument('http://www.w3.org/2000/svg', 'svg');
+    const prefix = 'ce-chart-' + E.hash(source) + '-';
+    let changed = false;
+    const safeValue = value => {
+      if (/[\\<>\x00-\x1f]|\/\*|@|expression\s*\(|(?:https?|data|javascript):/i.test(value)) return null;
+      const local = value.replace(/url\(\s*#([\w.-]+)\s*\)/g, (_, id) => `url(#${prefix}${id})`);
+      return /url\s*\(/i.test(local.replace(/url\(#[\w.-]+\)/g, '')) ? null : local;
+    };
+    function copy(from, to, depth) {
+      if (depth > 64) throw new Error('Chart exceeds conversion limit.');
+      for (const attr of from.attributes) {
+        if (attr.name === 'style') {
+          const styles = [];
+          for (const declaration of attr.value.split(';')) {
+            const colon = declaration.indexOf(':'), name = declaration.slice(0, colon).trim(), value = safeValue(declaration.slice(colon + 1).trim());
+            if (colon > 0 && svgStyles.has(name) && value) styles.push(name + ':' + value);
+            else if (declaration.trim()) changed = true;
+          }
+          if (styles.length) to.setAttribute('style', styles.join(';'));
+        } else if (svgAttributes.has(attr.name)) {
+          const value = safeValue(attr.value);
+          if (value !== null) to.setAttribute(attr.name, attr.name === 'id' ? prefix + value : value);
+          else changed = true;
+        } else if (!/^(xmlns$|data-|aria-)/.test(attr.name) && attr.name !== 'role') changed = true;
+      }
+      for (const child of from.childNodes) {
+        if (child.nodeType === 3 && /^(text|tspan|title|desc)$/.test(from.localName)) to.append(clean.createTextNode(child.textContent));
+        else if (child.nodeType === 1) {
+          if (!svgTags.has(child.localName) || child.namespaceURI !== 'http://www.w3.org/2000/svg') { changed = true; continue; }
+          const element = clean.createElementNS('http://www.w3.org/2000/svg', child.localName);
+          copy(child, element, depth + 1); to.append(element);
+        }
+      }
+    }
+    copy(parsed.documentElement, clean.documentElement, 0);
+    const svg = new XMLSerializer().serializeToString(clean);
+    const labels = [...clean.querySelectorAll('text,title,desc')].map(el => el.textContent.trim()).filter(Boolean);
+    return { svg, labels, changed, url: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg) };
+  }
 
   E.convert = function (node, { base = node.ownerDocument?.URL, includeThoughts = false } = {}) {
     const links = [], images = [], artifacts = [];
@@ -55,6 +108,24 @@
         const content = [...el.querySelectorAll('img')].map(img => render(img, depth));
         return { md: content.map(c => c.md).join('\n'), html: content.map(c => c.html).join('') };
       }
+      if (tag === 'img' && (el.matches('.luminous-file-icon,[class*="avatar"],[alt="Avatar"]') || el.closest('.favicon,.favicon-icons,[data-d-component="favicon"],[data-d-component="icon"]') || /favicon|\/s2\/favicons/i.test(el.getAttribute('src') || '') || (el.classList.contains('rounded-full') && el.parentElement?.matches('[class*="size-6"],[class*="size-4"]')))) return { md: '', html: '' };
+      const vectorImage = tag === 'img' && /^data:image\/svg\+xml(?:[;,])/i.test(el.getAttribute('src') || el.getAttribute('data-src') || '');
+      const vectorChart = tag === 'svg' && !el.matches('[data-d-component="icon"]') && !!el.querySelector('text,title,desc');
+      if (vectorImage || vectorChart) {
+        try {
+          const chart = svgImage(vectorImage ? el.getAttribute('src') || el.getAttribute('data-src') : el.outerHTML);
+          const alt = el.getAttribute('alt') || el.getAttribute('aria-label') || 'Chart';
+          const description = chart.labels.length ? alt + ' · ' + chart.labels.join(' · ') : alt;
+          images.push({ url: chart.url, alt: description, ephemeral: false, kind: 'chart', mime: 'image/svg+xml' });
+          degraded ||= chart.changed;
+          return { md: `\n\n![${E.label(description)}](${E.mdURL(chart.url)})\n\n`, html: `<figure class="chart">${chart.svg}<figcaption>${E.escapeHTML(description)}</figcaption><a class="image-link" href="${E.escapeHTML(chart.url)}" rel="noreferrer">Chart image</a></figure>` };
+        } catch {
+          degraded = true;
+          const label = el.getAttribute('alt') || el.getAttribute('aria-label') || 'Chart';
+          artifacts.push({ kind: 'chart', title: label, url: null, note: 'Chart could not be converted' });
+          return { md: `\n\n> ${E.label(label)} (chart unavailable)\n\n`, html: `<p>${E.escapeHTML(label)} (chart unavailable)</p>` };
+        }
+      }
       if (el.matches(skipped)) return { md: '', html: '' };
       if (tag === 'immersive-entry-chip' && !el.querySelector('iframe')) {
         const button = el.querySelector('button');
@@ -92,8 +163,6 @@
         return { md: url ? `\n\n[${E.label(label)}](${E.mdURL(url)})\n\n` : `\n\n> ${E.label(label)} (no accessible URL)\n\n`, html: url ? `<p><a href="${E.escapeHTML(url)}" rel="noreferrer">${E.escapeHTML(label)}</a></p>` : `<p>${E.escapeHTML(label)} (no accessible URL)</p>` };
       }
       if (tag === 'img') {
-        // Ignore file-type icons and avatars; actual image attachments remain resources.
-        if (el.matches('.luminous-file-icon,[class*="avatar"],[alt="Avatar"]') || el.closest('.favicon,.favicon-icons') || /favicon|\/s2\/favicons/i.test(el.getAttribute('src') || '') || (el.classList.contains('rounded-full') && el.parentElement?.matches('[class*="size-6"],[class*="size-4"]'))) return { md: '', html: '' };
         const url = E.url(el.getAttribute('src') || el.getAttribute('data-src'), base, true);
         if (!url) return { md: '', html: '' };
         const alt = el.alt || 'Image';

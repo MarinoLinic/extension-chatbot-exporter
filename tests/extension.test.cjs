@@ -104,6 +104,25 @@ test('real MV3 extension: content script, popup messaging, selected transcript d
     const copy = await send({ type: 'ce:copy', selection: 'all', token: state.token, format: 'json' });
     assert.ok(!copy.error, copy.error);
     assert.match(JSON.parse(copy.copyText).capture.warnings.join(' '), /still generating/);
+    await page.evaluate(() => {
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><path d="M10 90 L100 10" stroke="#0d9488"/><text x="10" y="95">Chart label</text></svg>';
+      const image = document.createElement('img');
+      image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+      document.querySelector('model-response-content').append(image);
+    });
+    await send({ type: 'ce:settings', settings: { scan: false, saveAs: false, downloadImages: true } });
+    const chartExport = await send({ type: 'ce:export', selection: 'assistant', format: 'html' });
+    assert.ok(!chartExport.error, chartExport.error);
+    for (let i = 0; i < 40; i++) {
+      downloads = await worker.evaluate(async () => chrome.downloads.search({}));
+      if (downloads.length === 9 && downloads.every(d => d.state === 'complete')) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    assert.equal(downloads.length, 9, 'HTML transcript, raster image, SVG chart and media report were downloaded');
+    assert.ok(downloads.every(d => d.state === 'complete'));
+    const files = downloads.filter(d => d.id > newest.id).map(d => fs.readFileSync(d.filename, 'utf8'));
+    assert.ok(files.some(content => content.startsWith('<svg') && content.includes('Chart label')));
+    assert.ok(files.some(content => content.startsWith('<!doctype html>') && content.includes('class="chart"')));
     await page.screenshot({ path: path.join(work, 'page.png') });
     console.log('Real extension QA artifacts: ' + work);
   } finally { await context.close(); await new Promise(resolve => imageServer.close(resolve)); }

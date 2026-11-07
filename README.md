@@ -86,7 +86,9 @@ Enable **Also download selected messages' images** to request separate image fil
 
 Each export is limited to 100 unique image URLs. URLs can expire or require authentication. Temporary blob images should be downloaded before leaving the tab. When an image type cannot be inferred, its filename uses `.image`. Markdown links are not rewritten to local image paths, and images are not bundled into a media ZIP.
 
-A Markdown viewer may contact image hosts when rendering URL images. The HTML reading copy does not load images automatically.
+A Markdown viewer may contact image hosts when rendering URL images. SVG charts embedded in a message are cleaned of executable content and external references. HTML exports display those charts locally, and Markdown and JSON retain their image data and labels. **Download images too** also saves them as `.svg` files. Other image resources appear as links in the HTML reading copy.
+
+ChatGPT's styled cards, columns, badges and CSS layouts are converted to the reader's text, headings and tables. Their original page styling is simplified.
 
 ## Capture settings and limits
 

@@ -49,6 +49,47 @@ test('an oversized table preserves readable text and a renderer error falls back
   await page.close();
 });
 
+test('SVG charts preserve geometry, labels and colors in encoded images, base64 images and inline markup', async () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100" style="color:rgb(13,13,13)"><path d="M10 90 L90 10 L190 60" fill="none" stroke="#0d9488"/><text x="10" y="95">Start</text><text x="150" y="95">End</text></svg>';
+  const page = await setup(chrome, `<model-response><img data-d-component="svg" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}"><img src="data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}">${svg}</model-response>`);
+  const result = await page.evaluate(() => {
+    const archive = ChatExport.loadedArchive({ provider: ChatExport.provider(location.href) });
+    return { archive, html: ChatExport.format(archive, 'html').content };
+  });
+  const message = result.archive.messages[0];
+  assert.equal((message.html.match(/class="chart"/g) || []).length, 3);
+  assert.equal(message.images.length, 1, 'Identical encoded charts share one download resource');
+  assert.equal(message.images[0].mime, 'image/svg+xml');
+  assert.match(message.markdown, /Start.*End/);
+  assert.match(message.html, /stroke="#0d9488"/);
+  assert.match(message.html, /color:rgb\(13,13,13\)/);
+  assert.equal(result.archive.capture.warnings.length, 0);
+  await page.setContent(result.html);
+  for (const width of [1100, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    const geometry = await page.locator('.chart svg').first().boundingBox();
+    assert.ok(geometry.width > 150 && geometry.height > 70);
+    assert.ok(geometry.x >= 0 && geometry.x + geometry.width <= width);
+  }
+  await page.close();
+});
+
+test('SVG charts remove executable content and external resources and warn when conversion loses content', async () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100" onload="globalThis.chartExecuted=true"><script>globalThis.chartExecuted=true</script><foreignObject><div xmlns="http://www.w3.org/1999/xhtml">Unsafe app</div></foreignObject><image href="https://external.example/tracker.png"/><rect width="100" height="50" fill="url(https://external.example/style)" style="stroke:url(https://external.example/stroke)"/><text x="10" y="30">Retained label</text></svg>';
+  const page = await setup(chrome, `<model-response><img src="data:image/svg+xml,${encodeURIComponent(svg)}"></model-response>`);
+  const { archive, html } = await page.evaluate(() => {
+    const archive = ChatExport.loadedArchive({ provider: ChatExport.provider(location.href) });
+    return { archive, html: ChatExport.format(archive, 'html').content };
+  });
+  const source = decodeURIComponent(archive.messages[0].images[0].url.split(',').slice(1).join(','));
+  assert.doesNotMatch(source, /script|onload|foreignObject|<image|external\.example|Unsafe app/);
+  assert.match(source, /Retained label/);
+  assert.equal(archive.capture.status, 'partial');
+  await page.setContent(html);
+  assert.equal(await page.evaluate(() => globalThis.chartExecuted), undefined);
+  await page.close();
+});
+
 test('semantic export preserves prose around math, deep code fences, tables, links and nested lists', async () => {
   const page = await setup(chrome, `<article><p>Before <span class="katex"><math><annotation encoding="application/x-tex">x^2 + y^2</annotation></math><span aria-hidden="true">duplicate visual</span></span> after.</p><div class="math-block" data-math="E=mc^2"></div><pre><code class="language-js">const s = '\x60\x60\x60\x60';\n\n\n  let x = 1;</code></pre><ol start="3"><li>First<ul><li>Nested</li></ul></li><li value="7">Later</li></ol><table><tr><th colspan="2">A | B</th></tr><tr><td rowspan="2">1</td><td>2</td></tr><tr><td><a href="/source?q=(x)">Source</a></td></tr></table><a href="javascript:alert(1)">Unsafe</a><img src="https://images.example/a.png" alt="Sketch"><iframe srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;"> </iframe></article>`);
   const r = await page.evaluate(() => ChatExport.convert(document.querySelector('article')));

@@ -115,10 +115,15 @@
         for (const [i, image] of images.entries()) {
           if (operation !== generation || location.href !== selected.sourceURL) { manifest.push({ ...image, status: 'skipped', reason: 'Conversation changed' }); continue; }
           if (i >= 100) { manifest.push({ ...image, status: 'skipped', reason: '100-image safety limit' }); continue; }
-          const extension = image.url.match(/\.(png|jpe?g|webp|gif|avif)(?:[?#]|$)/i)?.[1] || image.url.match(/^data:image\/(png|jpeg|webp|gif|avif);/i)?.[1] || 'image';
+          const extension = image.mime === 'image/svg+xml' ? 'svg' : image.url.match(/\.(png|jpe?g|webp|gif|avif)(?:[?#]|$)/i)?.[1] || image.url.match(/^data:image\/(png|jpeg|webp|gif|avif);/i)?.[1] || 'image';
           const filename = `${output.filename.replace(/\.[^.]+$/, '')}_image-${String(i + 1).padStart(3, '0')}.${extension}`;
           try {
-            const result = image.url.startsWith('blob:') ? await download(await (await fetch(image.url)).blob(), filename, false) : await chrome.runtime.sendMessage({ type: 'ce:download', media: true, url: image.url, filename, saveAs: false });
+            let result;
+            if (image.mime === 'image/svg+xml') {
+              const source = decodeURIComponent(image.url.slice(image.url.indexOf(',') + 1));
+              result = await download(new Blob([source], { type: 'image/svg+xml' }), filename, false);
+            } else if (image.url.startsWith('blob:')) result = await download(await (await fetch(image.url)).blob(), filename, false);
+            else result = await chrome.runtime.sendMessage({ type: 'ce:download', media: true, url: image.url, filename, saveAs: false });
             manifest.push({ ...image, filename, status: result?.ok ? 'queued' : 'failed', downloadId: result?.id, reason: result?.error });
           } catch (error) { manifest.push({ ...image, filename, status: 'failed', reason: error.message }); }
           if (operation === generation) state.phase = `Images ${i + 1}/${Math.min(100, images.length)}`;
