@@ -1,8 +1,24 @@
 # Conversation Exporter
 
+<img src="favicon.svg" width="48" height="48" alt="" />
+
 Copy or download the chatbot conversation open in your browser as Markdown, JSON, HTML, text or CSV. Select individual messages, preserve source links and formatting, and optionally download images.
 
 Conversation Exporter runs locally. It needs no API key, account, server or build step.
+
+## Screenshots
+
+Message selection and export settings, with fictional conversation text.
+
+![Popup](docs/screenshots/popup.png)
+
+![Settings](docs/screenshots/settings.png)
+
+## How it works
+
+![Workflow for Conversation Exporter](docs/readme-workflow.svg)
+
+Workflow diagram. Capture reads the rendered conversation; unavailable messages remain outside the export.
 
 ## Install
 

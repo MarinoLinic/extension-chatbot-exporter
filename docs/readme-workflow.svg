@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="284" viewBox="0 0 1120 284" role="img" aria-labelledby="title desc">
+<title id="title">Conversation Exporter workflow</title>
+<desc id="desc">Open a conversation: Supported chatbot tab → Choose messages: All, roles or a selection → Check loaded history: Limits remain visible → Save a reading copy: Markdown, HTML, JSON +</desc>
+<rect width="1120" height="284" rx="16" fill="#f2f3f1"/>
+<text x="32" y="44" font-family="Arial,Helvetica,sans-serif" font-size="22" font-weight="700" fill="#373c43">Conversation Exporter</text>
+<rect x="32" y="74" width="228" height="146" rx="12" fill="#ffffff" stroke="#373c43" stroke-opacity=".25"/>
+<circle cx="59" cy="104" r="14" fill="#373c43"/>
+<text x="59" y="109" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="14" fill="#fff">1</text>
+<text x="50" y="150" font-family="Arial,Helvetica,sans-serif" font-size="17" font-weight="600" fill="#22313a">Open a conversation</text>
+<text x="50" y="181" font-family="Arial,Helvetica,sans-serif" font-size="14" fill="#4e5e68">Supported chatbot tab</text>
+<path d="M273 145h20m-7-6 7 6-7 6" stroke="#373c43" stroke-width="2" fill="none"/>
+<rect x="308" y="74" width="228" height="146" rx="12" fill="#ffffff" stroke="#373c43" stroke-opacity=".25"/>
+<circle cx="335" cy="104" r="14" fill="#373c43"/>
+<text x="335" y="109" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="14" fill="#fff">2</text>
+<text x="326" y="150" font-family="Arial,Helvetica,sans-serif" font-size="17" font-weight="600" fill="#22313a">Choose messages</text>
+<text x="326" y="181" font-family="Arial,Helvetica,sans-serif" font-size="14" fill="#4e5e68">All, roles or a selection</text>
+<path d="M549 145h20m-7-6 7 6-7 6" stroke="#373c43" stroke-width="2" fill="none"/>
+<rect x="584" y="74" width="228" height="146" rx="12" fill="#ffffff" stroke="#373c43" stroke-opacity=".25"/>
+<circle cx="611" cy="104" r="14" fill="#373c43"/>
+<text x="611" y="109" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="14" fill="#fff">3</text>
+<text x="602" y="150" font-family="Arial,Helvetica,sans-serif" font-size="17" font-weight="600" fill="#22313a">Check loaded history</text>
+<text x="602" y="181" font-family="Arial,Helvetica,sans-serif" font-size="14" fill="#4e5e68">Limits remain visible</text>
+<path d="M825 145h20m-7-6 7 6-7 6" stroke="#373c43" stroke-width="2" fill="none"/>
+<rect x="860" y="74" width="228" height="146" rx="12" fill="#ffffff" stroke="#373c43" stroke-opacity=".25"/>
+<circle cx="887" cy="104" r="14" fill="#373c43"/>
+<text x="887" y="109" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="14" fill="#fff">4</text>
+<text x="878" y="150" font-family="Arial,Helvetica,sans-serif" font-size="17" font-weight="600" fill="#22313a">Save a reading copy</text>
+<text x="878" y="181" font-family="Arial,Helvetica,sans-serif" font-size="14" fill="#4e5e68">Markdown, HTML, JSON +</text>
+<text x="32" y="255" font-family="Arial,Helvetica,sans-serif" font-size="13" fill="#52636c">Workflow / architecture diagram</text>
+</svg>
