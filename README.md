@@ -164,3 +164,9 @@ Additional commands:
 Keep real conversations, development captures, test profiles and generated artifacts in ignored `.local/`. Never put private conversation text in committed test fixtures. Repository invariants are documented in [AGENTS.md](AGENTS.md).
 
 The shared source separates provider adapters, semantic conversion, collection, output formats, design, interface controls and browser downloads. Providers use the same converter and collector; generated console scripts use those modules too.
+
+## Project and browser icons
+
+The project, browser toolbar and extension-management icons share [favicon.svg](favicon.svg). Run `npm run icons` after changing that file, then reload the unpacked extension from the browser's extensions page. The generated PNGs cover 16, 32, 48 and 128 pixels and are committed with the extension.
+
+Icon generation uses the existing Playwright development dependency and installed Chrome. Run `npm install` first if needed; `ICON_BROWSER_CHANNEL` can select another installed Playwright browser channel.

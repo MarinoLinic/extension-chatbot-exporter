@@ -8,7 +8,8 @@
     "test:samples": "node tools/check-samples.cjs",
     "console": "node tools/build-console.cjs",
     "check": "node tools/check.cjs",
-    "package": "node tools/package.cjs"
+    "package": "node tools/package.cjs",
+    "icons": "node tools/make-icons.cjs"
   },
   "devDependencies": {
     "playwright": "1.62.1"
